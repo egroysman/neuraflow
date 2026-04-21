@@ -18,7 +18,10 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://neuraflow-qe7yhdptc-egroysmans-projects.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,10 +43,6 @@ def read_root():
 
 
 def compact_uploaded_context(uploaded_context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Reduce the context sent to the LLM so large portfolios do not exceed the model context window.
-    Keep full data for the UI, but only send compact summaries to the AI.
-    """
     if not uploaded_context:
         return {"note": "No uploaded or direct data context provided."}
 
@@ -54,11 +53,13 @@ def compact_uploaded_context(uploaded_context: Optional[Dict[str, Any]]) -> Dict
         "row_count": data.get("row_count", 0),
         "customer_count": data.get("customer_count", 0),
         "total_invoice_amount": data.get("total_invoice_amount", 0),
+        "portfolio_expected_cash_next_30_days": data.get("portfolio_expected_cash_next_30_days", 0),
         "aging_buckets": data.get("aging_buckets", {}),
         "top_risky_customers": [],
         "top_recommended_actions": [],
         "top_customers_by_exposure": [],
         "top_customers_by_overdue": [],
+        "top_expected_payers_next_30_days": [],
     }
 
     for customer in (data.get("top_risky_customers", []) or [])[:5]:
@@ -72,6 +73,8 @@ def compact_uploaded_context(uploaded_context: Optional[Dict[str, Any]]) -> Dict
             "predicted_payment_date": customer.get("predicted_payment_date"),
             "recommended_action": customer.get("recommended_action"),
             "action_priority": customer.get("action_priority"),
+            "predicted_amount_paid_next_30_days": customer.get("predicted_amount_paid_next_30_days"),
+            "predicted_collection_rate_next_30_days": customer.get("predicted_collection_rate_next_30_days"),
         })
 
     for customer in (data.get("top_recommended_actions", []) or [])[:5]:
@@ -84,6 +87,8 @@ def compact_uploaded_context(uploaded_context: Optional[Dict[str, Any]]) -> Dict
             "recommended_action": customer.get("recommended_action"),
             "action_priority": customer.get("action_priority"),
             "action_reason": customer.get("action_reason"),
+            "predicted_amount_paid_next_30_days": customer.get("predicted_amount_paid_next_30_days"),
+            "predicted_collection_rate_next_30_days": customer.get("predicted_collection_rate_next_30_days"),
         })
 
     for customer in (data.get("top_customers_by_exposure", []) or [])[:5]:
@@ -100,6 +105,16 @@ def compact_uploaded_context(uploaded_context: Optional[Dict[str, Any]]) -> Dict
             "overdue_amount": customer.get("overdue_amount"),
             "ml_risk_probability": customer.get("ml_risk_probability"),
             "recommended_action": customer.get("recommended_action"),
+        })
+
+    for customer in (data.get("top_expected_payers_next_30_days", []) or [])[:5]:
+        compact["top_expected_payers_next_30_days"].append({
+            "customer_id": customer.get("customer_id"),
+            "predicted_amount_paid_next_30_days": customer.get("predicted_amount_paid_next_30_days"),
+            "predicted_collection_rate_next_30_days": customer.get("predicted_collection_rate_next_30_days"),
+            "predicted_payment_date": customer.get("predicted_payment_date"),
+            "ml_risk_prediction": customer.get("ml_risk_prediction"),
+            "ml_risk_probability": customer.get("ml_risk_probability"),
         })
 
     if uploaded_context.get("customer_detail"):
@@ -119,6 +134,8 @@ def compact_uploaded_context(uploaded_context: Optional[Dict[str, Any]]) -> Dict
             "latest_due_date": customer.get("latest_due_date"),
             "oldest_invoice_date": customer.get("oldest_invoice_date"),
             "behavior_summary": customer.get("behavior_summary"),
+            "predicted_amount_paid_next_30_days": customer.get("predicted_amount_paid_next_30_days"),
+            "predicted_collection_rate_next_30_days": customer.get("predicted_collection_rate_next_30_days"),
         }
 
     return compact
@@ -142,17 +159,16 @@ def run_clarification_logic(user_message, history=None, ar_context=None, uploade
 
     history_text = compact_history(history)
     ar_context_text = json.dumps(ar_context, indent=2) if ar_context else "No AR context provided."
-
     ai_context = compact_uploaded_context(uploaded_context)
     uploaded_context_text = json.dumps(ai_context, indent=2)
 
     prompt = f"""
-You are NEURAFLOW, a finance decision AI designed to help professionals make judgment calls.
+You are NEURAFLOW, a finance AI designed to help professionals make judgment calls around credit risk and cash prediction.
 
 Your job:
 1. Use the conversation history
 2. Use the AR context if provided
-3. Use uploaded AR summary, ML predictions, and recommended actions if provided
+3. Use uploaded finance summary, ML predictions, and recommended actions if provided
 4. Determine if enough information exists to make a decision
 5. If yes, give a clear recommendation
 6. If not, ask one precise clarifying question
@@ -160,7 +176,7 @@ Your job:
 You think like:
 - a finance manager
 - a controller
-- a senior analyst
+- a credit manager
 - a collections leader
 
 Focus on:
@@ -170,6 +186,7 @@ Focus on:
 - aging profile
 - customer-level ML risk signals
 - predicted timing of payment
+- expected cash in the next 30 days
 - recommended collection actions
 - practical next actions
 
@@ -180,9 +197,9 @@ Behavior rules:
 - Prefer a practical recommendation with assumptions over endless clarification
 - Keep questions short and direct
 - Keep answers practical and business-oriented
-- Treat AR context and uploaded analytics as factual source data
+- Treat uploaded analytics as factual source data
 - When action recommendations exist, use them directly
-- Be decisive when the data supports a clear collections action
+- Be decisive when the data supports a clear action
 - Do not ask to inspect raw rows if summary data already exists
 
 Conversation history:
