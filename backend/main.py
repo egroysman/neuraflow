@@ -12,10 +12,6 @@ from dotenv import load_dotenv
 from ar_context import get_ar_context
 from data_sources import get_data_source
 
-# =========================
-# INIT
-# =========================
-
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -23,27 +19,20 @@ data_source = get_data_source()
 
 app = FastAPI()
 
-# 🚨 OPEN CORS FOR DEBUGGING (fixes "chat upload failed")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # open for now
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# =========================
-# MODELS
-# =========================
 
 class ChatRequest(BaseModel):
     message: str
     history: List[Dict[str, Any]] = []
     customer_id: Optional[str] = None
 
-# =========================
-# ROOT
-# =========================
 
 @app.get("/")
 def read_root():
@@ -52,9 +41,6 @@ def read_root():
         "data_source": os.getenv("DATA_SOURCE_TYPE", "csv")
     }
 
-# =========================
-# HELPERS
-# =========================
 
 def compact_uploaded_context(uploaded_context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not uploaded_context:
@@ -75,12 +61,8 @@ def compact_uploaded_context(uploaded_context: Optional[Dict[str, Any]]) -> Dict
 
 def compact_history(history: List[Dict[str, Any]], max_items: int = 6) -> str:
     trimmed = history[-max_items:]
-    return "\n".join([f"{h['role']}: {h['content']}" for h in trimmed])
+    return "\n".join([f"{h.get('role', 'user')}: {h.get('content', '')}" for h in trimmed])
 
-
-# =========================
-# AI LOGIC
-# =========================
 
 def run_clarification_logic(user_message, history=None, ar_context=None, uploaded_context=None):
     history = history or []
@@ -114,22 +96,57 @@ Respond in JSON:
 }}
 """
 
-    response = client.responses.create(
-        model="gpt-5.3",
-        input=prompt
-    )
-
     try:
-        return json.loads(response.output_text)
-    except:
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=prompt
+        )
+
+        try:
+            return json.loads(response.output_text)
+        except Exception:
+            return {
+                "error": "Model output parsing failed",
+                "raw": response.output_text
+            }
+
+    except Exception as e:
+        print("🔥 OPENAI ERROR:", str(e))
         return {
-            "error": "Model output parsing failed",
-            "raw": response.output_text
+            "error": f"OpenAI request failed: {str(e)}"
         }
 
-# =========================
-# ENDPOINTS
-# =========================
+
+@app.post("/chat")
+def chat(req: ChatRequest):
+    try:
+        ar_context = get_ar_context(req.customer_id) if req.customer_id else None
+
+        if req.customer_id:
+            customer_detail = data_source.get_customer_detail(req.customer_id)
+            all_data = data_source.get_customer_summaries()
+            direct_context = {
+                "customer_detail": customer_detail,
+                "summary": all_data,
+                "source_type": os.getenv("DATA_SOURCE_TYPE", "csv")
+            }
+        else:
+            direct_context = {
+                "summary": data_source.get_customer_summaries(),
+                "source_type": os.getenv("DATA_SOURCE_TYPE", "csv")
+            }
+
+        result = run_clarification_logic(req.message, req.history, ar_context, direct_context)
+
+        return {
+            **result,
+            "uploaded_context": direct_context
+        }
+
+    except Exception as e:
+        print("🔥 /chat ERROR:", str(e))
+        return {"error": str(e)}
+
 
 @app.post("/chat-upload")
 async def chat_upload(
@@ -139,20 +156,32 @@ async def chat_upload(
     file: Optional[UploadFile] = File(None),
 ):
     try:
-        parsed_history = json.loads(history)
+        parsed_history = json.loads(history) if history else []
+
+        ar_context = get_ar_context(customer_id) if customer_id else None
 
         if file:
             file_bytes = await file.read()
             uploaded_context = data_source.get_customer_summaries(file_bytes)
         else:
-            uploaded_context = {
-                "summary": data_source.get_customer_summaries()
-            }
+            if customer_id:
+                customer_detail = data_source.get_customer_detail(customer_id)
+                all_data = data_source.get_customer_summaries()
+                uploaded_context = {
+                    "customer_detail": customer_detail,
+                    "summary": all_data,
+                    "source_type": os.getenv("DATA_SOURCE_TYPE", "csv")
+                }
+            else:
+                uploaded_context = {
+                    "summary": data_source.get_customer_summaries(),
+                    "source_type": os.getenv("DATA_SOURCE_TYPE", "csv")
+                }
 
         result = run_clarification_logic(
             message,
             parsed_history,
-            None,
+            ar_context,
             uploaded_context
         )
 
@@ -162,7 +191,5 @@ async def chat_upload(
         }
 
     except Exception as e:
-        print("🔥 ERROR:", str(e))
-        return {
-            "error": str(e)
-        }
+        print("🔥 /chat-upload ERROR:", str(e))
+        return {"error": str(e)}

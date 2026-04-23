@@ -8,8 +8,14 @@ def get_data_source():
     source_type = os.getenv("DATA_SOURCE_TYPE", "csv").lower()
 
     if source_type == "csv":
-        default_csv_path = Path(__file__).resolve().parent.parent / "cdm_model" / "data" / "invoices.csv"
-        return CSVDataSource(str(default_csv_path))
+        default_csv_path = os.getenv("DEFAULT_INVOICE_CSV_PATH")
+
+        if not default_csv_path:
+            default_csv_path = str(
+                Path(__file__).resolve().parent.parent / "neuraflow_invoices.csv"
+            )
+
+        return CSVDataSource(default_csv_path)
 
     if source_type == "snowflake":
         return SnowflakeDataSource()
