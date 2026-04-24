@@ -10,10 +10,20 @@ def get_data_source():
     if source_type == "csv":
         default_csv_path = os.getenv("DEFAULT_INVOICE_CSV_PATH")
 
+        # Railway fallback
+        railway_path = "/app/neuraflow_invoices.csv"
+
+        # Local fallback
+        local_path = str(
+            Path(__file__).resolve().parent.parent / "neuraflow_invoices.csv"
+        )
+
+        # If env var is missing OR points to a Mac path that does not exist in Railway
         if not default_csv_path:
-            default_csv_path = str(
-                Path(__file__).resolve().parent.parent / "neuraflow_invoices.csv"
-            )
+            default_csv_path = railway_path if os.path.exists(railway_path) else local_path
+
+        if default_csv_path.startswith("/Users/") and not os.path.exists(default_csv_path):
+            default_csv_path = railway_path if os.path.exists(railway_path) else local_path
 
         return CSVDataSource(default_csv_path)
 
