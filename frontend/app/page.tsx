@@ -10,17 +10,23 @@ type HistoryItem = {
 type AIResponse = {
   confidence?: number;
   is_ambiguous?: boolean;
-  interpretations?: string[];
-  restate?: string;
-  clarifying_question?: string;
-  answer?: string;
-  assumptions?: string;
+  interpretations?: any[];
+  restate?: any;
+  clarifying_question?: any;
+  answer?: any;
+  assumptions?: any;
   uploaded_context?: any;
-  error?: string;
-  raw?: string;
+  error?: any;
+  raw?: any;
 };
 
 const API_BASE = "https://neuraflow-production.up.railway.app";
+
+const toDisplayText = (value: any): string => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2);
+};
 
 export default function Home() {
   const [message, setMessage] = useState<string>("");
@@ -104,12 +110,13 @@ export default function Home() {
         setSelectedCustomer(dashboardData.customer_summaries[0]);
       }
 
-      const assistantText =
+      const assistantText = toDisplayText(
         raw.answer ||
-        raw.clarifying_question ||
-        raw.restate ||
-        raw.error ||
-        "No response";
+          raw.clarifying_question ||
+          raw.restate ||
+          raw.error ||
+          "No response"
+      );
 
       setHistory([
         ...newHistory,
@@ -134,8 +141,9 @@ export default function Home() {
     }
   };
 
-  const runDemo = async () => {
-    await sendMessage(
+  const runDemo = () => {
+    setFile(null);
+    sendMessage(
       "Using the demo dataset, what is expected cash in the next 30 days, who are the highest risk customers, and what actions should finance take?",
       true
     );
@@ -333,6 +341,8 @@ export default function Home() {
 
               <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
                 <input
+                  id="neuraflow-message"
+                  name="message"
                   style={{
                     flex: 1,
                     padding: "12px",
@@ -369,6 +379,8 @@ export default function Home() {
 
               <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
                 <input
+                  id="neuraflow-customer-id"
+                  name="customerId"
                   style={{
                     width: "180px",
                     padding: "10px",
@@ -383,6 +395,8 @@ export default function Home() {
                 />
 
                 <input
+                  id="neuraflow-file"
+                  name="file"
                   type="file"
                   accept=".csv"
                   onChange={(e) => setFile(e.target.files?.[0] || null)}
@@ -450,7 +464,15 @@ export default function Home() {
                     }}
                   >
                     <strong>{item.role === "user" ? "You" : "NEURAFLOW"}:</strong>{" "}
-                    {item.content}
+                    <pre
+                      style={{
+                        whiteSpace: "pre-wrap",
+                        fontFamily: "Arial, sans-serif",
+                        margin: "8px 0 0",
+                      }}
+                    >
+                      {item.content}
+                    </pre>
                   </div>
                 ))}
               </div>
@@ -465,18 +487,41 @@ export default function Home() {
 
               {loading && <p>Running analysis...</p>}
 
-              {response?.answer && <p style={{ lineHeight: 1.5 }}>{response.answer}</p>}
-
-              {response?.clarifying_question && !response?.answer && (
-                <p>{response.clarifying_question}</p>
+              {response?.answer && (
+                <pre style={{ lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                  {toDisplayText(response.answer)}
+                </pre>
               )}
 
-              {response?.error && <p style={{ color: "#fecaca" }}>{response.error}</p>}
+              {response?.clarifying_question && !response?.answer && (
+                <pre style={{ lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                  {toDisplayText(response.clarifying_question)}
+                </pre>
+              )}
+
+              {response?.error && (
+                <pre
+                  style={{
+                    color: "#fecaca",
+                    lineHeight: 1.5,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {toDisplayText(response.error)}
+                </pre>
+              )}
 
               {response?.assumptions && (
-                <p style={{ color: "#9ca3af", marginTop: "10px" }}>
-                  Assumptions: {response.assumptions}
-                </p>
+                <pre
+                  style={{
+                    color: "#9ca3af",
+                    marginTop: "10px",
+                    lineHeight: 1.5,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  Assumptions: {toDisplayText(response.assumptions)}
+                </pre>
               )}
 
               {response?.confidence !== undefined && (
@@ -636,8 +681,8 @@ export default function Home() {
                       <div style={{ fontWeight: 700 }}>
                         Customer {c.customer_id}
                       </div>
-                      <div>Action: {c.recommended_action}</div>
-                      <div>Reason: {c.action_reason}</div>
+                      <div>Action: {toDisplayText(c.recommended_action)}</div>
+                      <div>Reason: {toDisplayText(c.action_reason)}</div>
                       <div>
                         Expected 30D Cash: $
                         {Number(c.predicted_amount_paid_next_30_days || 0).toLocaleString()}
@@ -709,7 +754,7 @@ export default function Home() {
                     {selectedCustomerResolved?.behavior_summary && (
                       <div style={metricCardStyle}>
                         <div style={sectionLabel}>Behavior Summary</div>
-                        <div>{selectedCustomerResolved.behavior_summary}</div>
+                        <div>{toDisplayText(selectedCustomerResolved.behavior_summary)}</div>
                       </div>
                     )}
                   </div>
@@ -772,7 +817,7 @@ export default function Home() {
                               ).toLocaleString()}
                             </td>
                             <td style={{ padding: "10px 8px" }}>
-                              {c.recommended_action}
+                              {toDisplayText(c.recommended_action)}
                             </td>
                           </tr>
                         ))}
