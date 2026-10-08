@@ -13,7 +13,17 @@ const AGING_COLORS: Record<ApBucket, string> = {
   d90_plus: "#dc2626",
 };
 
-export function PayablesPanel({ ap, assumptions }: { ap: ApSummary; assumptions: Assumptions }) {
+export function PayablesPanel({
+  ap,
+  assumptions,
+  selected,
+  onSelect,
+}: {
+  ap: ApSummary;
+  assumptions: Assumptions;
+  selected?: string | null;
+  onSelect?: (vendorId: string | null) => void;
+}) {
   const total = ap.aging.reduce((sum, a) => sum + a.open_amount, 0) || 1;
   const modelDpo = assumptions.costs.dpo_days;
   const dueByMonth = ap.due_by_month;
@@ -102,7 +112,21 @@ export function PayablesPanel({ ap, assumptions }: { ap: ApSummary; assumptions:
             <tbody>
               {ap.vendors.map((v) => (
                 <tr key={v.vendor_id} className="border-t border-[#1a1d24]">
-                  <th scope="row" className="px-3 py-1.5 text-left font-medium text-[#e5e7eb]">{v.vendor_name}</th>
+                  <th scope="row" className={`px-3 py-1.5 text-left font-medium text-[#e5e7eb] ${selected === v.vendor_id ? "bg-[#12203a]" : ""}`}>
+                    {onSelect ? (
+                      <button
+                        type="button"
+                        aria-pressed={selected === v.vendor_id}
+                        onClick={() => onSelect(selected === v.vendor_id ? null : v.vendor_id)}
+                        className="rounded text-left underline decoration-dotted underline-offset-2 hover:text-white"
+                        title="Ask the assistant about this vendor"
+                      >
+                        {v.vendor_name}
+                      </button>
+                    ) : (
+                      v.vendor_name
+                    )}
+                  </th>
                   <td className="px-3 py-1.5 text-left text-[#9ca3af]">{v.category}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{money(v.open_amount)}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{v.share_pct.toFixed(0)}%</td>

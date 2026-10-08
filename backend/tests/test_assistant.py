@@ -123,3 +123,71 @@ def test_history_is_trimmed_and_prompt_has_bounds(fake):
 
 def test_validation_rejects_empty_message(client):
     assert client.post("/cashflow/ar-assistant", json=payload(message="")).status_code == 422
+
+
+# ---- every tab has its own assistant ------------------------------------
+
+from cashflow import trends as trends_mod  # noqa: E402
+
+ALL_TABS = list(assistant.TAB_GROUPS)
+
+
+def tab_data(result):
+    inv, bills = ar.parse_invoices(ROWS), ap.parse_bills(ap.load_bill_rows())
+    return {"invoices": inv, "bills": bills, "gl": gl.overview(result["as_of"], inv, bills),
+            "trends": trends_mod.build_trends(inv, bills, ar.snapshot_date(inv)), "focus": None}
+
+
+@pytest.mark.parametrize("tab", ALL_TABS)
+def test_every_tab_builds_a_context_with_its_own_impact(tab):
+    result = engine.forecast(ROWS, forecast_request(), ap.load_bill_rows(), gl.load_gl())
+    ctx = assistant.build_tab_context(tab, result, tab_data(result))
+    group = assistant.TAB_GROUPS[tab]
+    key = "impact_of_receivables_what_ifs" if tab == "receivables" else f"impact_of_{group}_what_ifs"
+    assert key in ctx and ctx["cash"]["starting"] == round(result["kpis"]["monthly"]["starting_cash"])
+    json.dumps(ctx, default=str)
+
+
+def test_context_reflects_loaded_data():
+    result = engine.forecast(ROWS, forecast_request(), ap.load_bill_rows(), gl.load_gl())
+    d = tab_data(result)
+    assert len(assistant.build_tab_context("payroll", result, d)["employees"]) == len(result["payroll"]["employees"])
+    assert assistant.build_tab_context("payables", result, d)["payables"]["open_total"] == round(result["ap"]["open_total"])
+    assert assistant.build_tab_context("gl", result, d)["ledger"]["entries"] > 1000
+    assert assistant.build_tab_context("balance", result, d)["balances_every_month"] is True
+    assert assistant.build_tab_context("trends", result, d)["customer_concentration"]["customers"] > 0
+    d["focus"] = result["ap"]["vendors"][0]["vendor_id"]
+    assert assistant.build_tab_context("payables", result, d)["selected_vendor"]["open_bills"]
+
+
+@pytest.mark.parametrize("tab", ALL_TABS)
+def test_suggestions_limited_to_the_tabs_own_levers(tab):
+    own = assistant.suggestible(tab)[0]
+    other = next(n for t in ALL_TABS if t != tab for n in assistant.suggestible(t))
+    out = assistant.validate_suggestions({own: 0, other: 1}, tab)
+    assert other not in out
+    assert own in out
+
+
+@pytest.mark.parametrize("tab", ALL_TABS)
+def test_endpoint_per_tab(client, fake, tab):
+    calls = fake({"answer": f"ok {tab}", "suggested_whatifs": {assistant.suggestible(tab)[0]: 0}, "follow_ups": ["more?"]})
+    r = client.post("/cashflow/assistant", json=payload(tab=tab))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["answer"] == f"ok {tab}" and assistant.suggestible(tab)[0] in body["suggested_whatifs"]
+    assert TAB_WORDS[tab] in calls[-1]
+
+
+TAB_WORDS = {t: assistant.TAB_ROLES[t] for t in ALL_TABS}
+
+
+def test_legacy_endpoint_is_receivables(client, fake):
+    calls = fake({"answer": "hi"})
+    assert client.post("/cashflow/ar-assistant", json=payload(tab="payroll")).status_code == 200
+    assert assistant.TAB_ROLES["receivables"] in calls[-1]
+
+
+def test_unknown_tab_rejected(client, fake):
+    fake({"answer": "x"})
+    assert client.post("/cashflow/assistant", json=payload(tab="nope")).status_code == 422

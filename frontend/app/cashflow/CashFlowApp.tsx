@@ -9,6 +9,7 @@ import { GlPanel } from "./GlPanel";
 import { PayrollPanel } from "./PayrollPanel";
 import { KpiCards, ScenarioPanel, StatementTable } from "./Panels";
 import { ReceivablesTab } from "./ReceivablesTab";
+import { TabAssistant } from "./TabAssistant";
 import { PayablesPanel } from "./PayablesPanel";
 import { TrendsPanel } from "./TrendsPanel";
 import { API_BASE, downloadExport, fetchDefaults, fetchForecast, money, shortDate } from "./lib";
@@ -80,6 +81,9 @@ export default function CashFlowApp() {
   const [assumptions, setAssumptions] = useState<Assumptions | null>(null);
   const [scenario, setScenario] = useState<Scenario>("base");
   const [adjustments, setAdjustments] = useState<Adjustments>(NO_ADJUSTMENTS);
+  const [focus, setFocus] = useState<{ receivables: string | null; payables: string | null }>({ receivables: null, payables: null });
+  // Tabs whose assistant has been opened stay mounted, so each keeps its conversation.
+  const [visited, setVisited] = useState<TabId[]>(["forecast"]);
   const [view, setView] = useState<View>("monthly");
   const [tab, setTab] = useState<TabId>("forecast");
   const [forecast, setForecast] = useState<Forecast | null>(null);
@@ -298,7 +302,7 @@ export default function CashFlowApp() {
                       id={`tab-${t.id}`}
                       aria-selected={tab === t.id}
                       aria-controls={`panel-${t.id}`}
-                      onClick={() => setTab(t.id)}
+                      onClick={() => { setTab(t.id); setVisited((v) => (v.includes(t.id) ? v : [...v, t.id])); }}
                       className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors sm:flex-none ${
                         tab === t.id ? "bg-[#1d4ed8] text-white" : "text-[#9ca3af] hover:bg-[#1f2937] hover:text-[#e5e7eb]"
                       }`}
@@ -314,8 +318,8 @@ export default function CashFlowApp() {
                       forecast={forecast}
                       adjustments={adjustments}
                       calibration={defaults.data_summary.collections_calibration}
-                      body={{ assumptions, scenario, adjustments }}
-                      onApplyWhatIfs={(changes) => setAdjustments((a) => ({ ...a, ...changes }))}
+                      focus={focus.receivables}
+                      onFocus={(id) => setFocus((f) => ({ ...f, receivables: id }))}
                     />
                   </div>
                 )}
@@ -336,7 +340,7 @@ export default function CashFlowApp() {
                 )}
                 {tab === "payables" && forecast && (
                   <div role="tabpanel" id="panel-payables" aria-labelledby="tab-payables">
-                    <PayablesPanel ap={forecast.ap} assumptions={assumptions} />
+                    <PayablesPanel ap={forecast.ap} assumptions={assumptions} selected={focus.payables} onSelect={(id) => setFocus((f) => ({ ...f, payables: id }))} />
                   </div>
                 )}
                 {tab === "capex" && forecast && (
@@ -448,6 +452,22 @@ export default function CashFlowApp() {
                       <StatementTable periods={periods} categories={forecast.categories} minCash={assumptions.general.min_cash} />
                     </Card>
 
+                  </div>
+                )}
+
+                {forecast && (
+                  <div className="mt-5">
+                    {TABS.filter((t) => t.id === tab || visited.includes(t.id)).map((t) => (
+                      <div key={t.id} hidden={t.id !== tab}>
+                        <TabAssistant
+                          tab={t.id}
+                          body={{ assumptions, scenario, adjustments }}
+                          focus={t.id === "receivables" ? focus.receivables : t.id === "payables" ? focus.payables : null}
+                          onClearFocus={() => setFocus((f) => ({ ...f, ...(t.id === "receivables" ? { receivables: null } : { payables: null }) }))}
+                          onApply={(changes) => setAdjustments((a) => ({ ...a, ...changes }))}
+                        />
+                      </div>
+                    ))}
                   </div>
                 )}
               </main>
