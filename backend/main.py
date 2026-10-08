@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from ar_context import get_ar_context
 from data_sources import get_data_source
 from traceability import create_trace_record, save_trace, get_recent_traces
+from cashflow.router import router as cashflow_router
 
 load_dotenv()
 
@@ -27,6 +28,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(cashflow_router)
 
 
 class ChatRequest(BaseModel):
