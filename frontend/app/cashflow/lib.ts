@@ -1,8 +1,8 @@
 import type { Adjustments, Assumptions, Defaults, Forecast, Scenario } from "./types";
 
-// Backend base URL. Set NEXT_PUBLIC_API_BASE when the API is not on localhost.
+// Backend base URL. Defaults to the deployed NeuraFlow API (same as the home page); set NEXT_PUBLIC_API_BASE=http://localhost:8000 for local development.
 export const API_BASE = (
-  process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"
+  process.env.NEXT_PUBLIC_API_BASE || "https://neuraflow-production.up.railway.app"
 ).replace(/\/$/, "");
 
 const intl = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
