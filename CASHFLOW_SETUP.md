@@ -34,4 +34,20 @@ Payables, capex and trends
 
 ## Receivables tab and tab-aware what-ifs
 
-The Receivables (AR) tab holds the aging, customer table and customer-cash charts. The what-if panel on the left shows the levers for the tab you are on (receivables: pay speed, late invoices, largest customer, collectability, bad debt; payroll: base pay, raises, extra hires, bonuses; capex: size, delay, rates; and so on). Every lever stays applied when you switch tabs, and the panel lists any that are active elsewhere. The forecast response includes `whatif_impact`: the effect of each group of levers on ending cash and the lowest balance.
+The Receivables (AR) tab holds the aging, customer table, customer-cash charts and the AR assistant. Each tab has its own what-if levers, and no lever appears on two tabs:
+
+| Tab | Levers |
+|---|---|
+| Forecast | sales level, growth, overhead |
+| Receivables | pay speed, past-due invoices, largest customer, collectability, bad debt |
+| Payroll | base pay, raises, extra hires, bonuses, benefits, employer taxes |
+| Payables | days to pay, overdue-bill catch-up, largest vendor, cost of goods |
+| Capex | size, delay, maintenance, down payment |
+| Balance Sheet | interest rate, tax rate, extra loan payment, owner cash |
+| GL & Actuals | starting cash vs ledger, other monthly cash, one-off item |
+| Trends | seasonality, losing part of the largest customer, new-sale payment timing |
+
+Every lever stays applied when you switch tabs, and the panel lists any that are active elsewhere. The forecast response includes `whatif_impact`: the effect of each group of levers on ending cash and the lowest balance.
+
+### AR assistant
+`POST /cashflow/ar-assistant` answers questions from the same forecast shown on screen (including active what-ifs). Click a customer row to focus it. The assistant may suggest receivables what-if settings; the browser shows them with an Apply button, and the server drops any unknown or out-of-range value. It needs `OPENAI_API_KEY` on the backend (model via `AR_ASSISTANT_MODEL`, default `gpt-4.1-mini`). The earlier standalone assistant page is still available at `/classic` but is no longer in the top navigation; `/` redirects to `/cashflow`.

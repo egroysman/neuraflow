@@ -211,13 +211,35 @@ class Adjustments(BaseModel):
     capex_delay_months: int = Field(0, ge=0, le=24, description="Push growth capex later")
     rate_change_pts: float = Field(0, ge=-10, le=10, description="Change in rates on floating loans and new financed capex")
     tax_rate_change_pts: float = Field(0, ge=-30, le=30, description="Added to the income tax rate")
+    # payables
+    bill_catchup_extra_days: int = Field(0, ge=0, le=120, description="Extra days to clear bills that are already past due")
+    top_vendor_delay_days: int = Field(0, ge=0, le=120, description="Extra days before the vendor you owe most is paid")
+    # payroll extras
+    benefits_change_pct: float = Field(0, ge=-50, le=100, description="Scales employee benefits cost")
+    employer_tax_change_pts: float = Field(0, ge=-5, le=10, description="Added to employer payroll taxes")
+    # capex extras
+    maintenance_capex_change_pct: float = Field(0, ge=-100, le=300, description="Scales maintenance capex")
+    down_payment_change_pts: float = Field(0, ge=-20, le=60, description="Added to the down payment on financed purchases")
+    # balance sheet
+    extra_loan_payment: float = Field(0, ge=0, le=1e6, description="Extra principal paid each month on the first loan")
+    equity_injection: float = Field(0, ge=-1e7, le=1e7, description="Cash put in (+) or taken out (-) by owners at the start")
+    # ledger / other cash
+    starting_cash_change: float = Field(0, ge=-1e7, le=1e7, description="Starting cash is higher or lower than the ledger says")
+    other_monthly_cash: float = Field(0, ge=-1e6, le=1e6, description="Other operating cash in (+) or out (-) each month")
+    one_time_cash_item: float = Field(0, ge=-1e7, le=1e7, description="A one-off cash item in month 3")
+    # trends
+    seasonal_swing_pct: float = Field(0, ge=0, le=60, description="Sales swing seasonally: peak in December, low in June")
+    top_customer_loss_pct: float = Field(0, ge=0, le=100, description="Share of the largest customer's sales that goes away")
+    new_sales_dso_change_days: int = Field(0, ge=-30, le=90, description="Change in days-to-pay on new sales only")
 
     GROUPS: ClassVar[Dict[str, List[str]]] = {
         "ar": ["collection_delay_days", "extra_bad_debt_pct", "collectability_change_pts", "past_due_delay_days", "top_customer_delay_days"],
-        "payroll": ["raise_change_pct_pts", "extra_hires", "bonus_change_pct", "salary_change_pct"],
-        "payables": ["dpo_change_days", "cogs_change_pct_pts"],
-        "capex": ["capex_change_pct", "capex_delay_months"],
-        "financing": ["rate_change_pts", "tax_rate_change_pts"],
+        "payroll": ["raise_change_pct_pts", "extra_hires", "bonus_change_pct", "salary_change_pct", "benefits_change_pct", "employer_tax_change_pts"],
+        "payables": ["dpo_change_days", "cogs_change_pct_pts", "bill_catchup_extra_days", "top_vendor_delay_days"],
+        "capex": ["capex_change_pct", "capex_delay_months", "maintenance_capex_change_pct", "down_payment_change_pts"],
+        "financing": ["rate_change_pts", "tax_rate_change_pts", "extra_loan_payment", "equity_injection"],
+        "ledger": ["starting_cash_change", "other_monthly_cash", "one_time_cash_item"],
+        "trends": ["seasonal_swing_pct", "top_customer_loss_pct", "new_sales_dso_change_days"],
         "operations": ["revenue_change_pct", "growth_change_pct_pts", "opex_change_pct"],
     }
 

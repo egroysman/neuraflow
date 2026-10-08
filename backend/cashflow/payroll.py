@@ -67,6 +67,7 @@ def build(
     adj = adj or Adjustments()
     pay_scale = 1.0 + adj.salary_change_pct / 100.0
     bonus_scale = max(0.0, 1.0 + adj.bonus_change_pct / 100.0)
+    ben_scale = max(0.0, 1.0 + adj.benefits_change_pct / 100.0)
     emps = list(p.employees)
     if adj.extra_hires:
         active = [e for e in emps if e.term_date is None and e.hire_date <= g.as_of]
@@ -77,7 +78,7 @@ def build(
                                  hire_date=g.as_of + dt.timedelta(days=30), benefits_monthly=avg_ben))
     n, as_of = g.horizon_months, g.as_of
     end = window(n - 1)[1]
-    tax = p.employer_tax_pct / 100.0
+    tax = max(0.0, p.employer_tax_pct + adj.employer_tax_change_pts) / 100.0
     raise_pct = p.salary_growth_pct_annual + inflation_pct + adj.raise_change_pct_pts
     per_year = PERIODS_PER_YEAR[p.pay_frequency]
     events: List[tuple] = []
@@ -137,7 +138,7 @@ def build(
                 year_ago = lo - dt.timedelta(days=365)
                 earned = min(1.0, _overlap_days(e, year_ago, lo) / 365.0) if e.hire_date > year_ago else 1.0
                 b = e.annual_base() * pay_scale * f * e.bonus_pct / 100.0 * earned * bonus_scale
-            bf = e.benefits_monthly * frac
+            bf = e.benefits_monthly * frac * ben_scale
             wages += w
             bonus += b
             ben += bf

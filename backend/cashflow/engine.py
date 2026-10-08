@@ -158,7 +158,7 @@ def build_events(
         growth += (1.0 + demand / 100.0) ** (1.0 / 12.0) - 1.0
     level = 1.0 + adj.revenue_change_pct / 100.0
     bad_debt = min(1.0, max(0.0, (a.sales.bad_debt_pct + adj.extra_bad_debt_pct) / 100.0))
-    dso = max(0.0, a.sales.dso_days + adj.collection_delay_days)
+    dso = max(0.0, a.sales.dso_days + adj.collection_delay_days + adj.new_sales_dso_change_days)
     cogs_pct = min(1.0, max(0.0, (a.costs.cogs_pct + adj.cogs_change_pct_pts) / 100.0))
     dpo = max(0.0, a.costs.dpo_days + adj.dpo_change_days)
     opex_factor = 1.0 + adj.opex_change_pct / 100.0
@@ -169,7 +169,8 @@ def build_events(
     projected_bills: List[Dict[str, Any]] = []
     if a.ap.use_open_bills and bills:
         projected_bills = ap.project_open_bills(
-            bills, as_of, a.ap.payment_lag_days, a.ap.overdue_catchup_days, adj.dpo_change_days
+            bills, as_of, a.ap.payment_lag_days, a.ap.overdue_catchup_days + adj.bill_catchup_extra_days,
+            adj.dpo_change_days, adj.top_vendor_delay_days,
         )
         for item in projected_bills:
             events.append(
@@ -194,6 +195,17 @@ def build_events(
         for when, amount, label in roster_payroll["events"]:
             events.append(Event(when, "payroll", amount, label))
 
+    loss_factor = 1.0
+    if adj.top_customer_loss_pct:
+        year_ago = as_of - dt.timedelta(days=365)
+        by_customer: Dict[str, float] = {}
+        for inv in invoices:
+            if year_ago <= inv.invoice_date <= as_of:
+                by_customer[inv.customer_id] = by_customer.get(inv.customer_id, 0.0) + inv.amount
+        total_sales = sum(by_customer.values())
+        if total_sales > 0:
+            loss_factor = 1.0 - max(by_customer.values()) / total_sales * adj.top_customer_loss_pct / 100.0
+
     revenue: List[float] = []
     cogs: List[float] = []
     payroll_cost: List[float] = []
@@ -203,6 +215,9 @@ def build_events(
     for k in range(n):
         start, finish = window(k)
         rev = a.sales.monthly_revenue * level * (1.0 + growth) ** k
+        if adj.seasonal_swing_pct:
+            rev *= 1.0 + adj.seasonal_swing_pct / 100.0 * math.cos(2.0 * math.pi * (start.month - 12) / 12.0)
+        rev *= loss_factor
         revenue.append(rev)
         invoice_date = start + dt.timedelta(days=14)
 
@@ -226,7 +241,7 @@ def build_events(
             heads = a.payroll.headcount + sum(h.count for h in a.payroll.hires if h.month <= k) + (adj.extra_hires if k >= 1 else 0)
             raise_factor = (1.0 + (a.payroll.salary_growth_pct_annual + inflation + adj.raise_change_pct_pts) / 100.0) ** (k / 12.0)
             payroll = (heads * a.payroll.avg_salary * (1.0 + adj.salary_change_pct / 100.0) * raise_factor / 12.0
-                       * (1.0 + a.payroll.burden_pct / 100.0))
+                       * (1.0 + (a.payroll.burden_pct + adj.employer_tax_change_pts) / 100.0))
             payroll_cost.append(payroll)
             events.append(Event(start + dt.timedelta(days=14), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
             events.append(Event(finish - dt.timedelta(days=1), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
@@ -249,14 +264,15 @@ def build_events(
         opex_cost.append(month_opex)
 
     # 3. Debt service ---------------------------------------------------------
-    for loan in a.loans:
+    for loan_index, loan in enumerate(a.loans):
         balance = loan.balance
+        extra = adj.extra_loan_payment if loan_index == 0 else 0.0
         for k in range(n):
             if balance <= 1e-9:
                 break
             rate = loan.annual_rate_pct + (rate_delta if loan.floating else 0.0)
             interest = balance * max(0.0, rate) / 100.0 / 12.0
-            payment = min(loan.monthly_payment, balance + interest)
+            payment = min(loan.monthly_payment + extra, balance + interest)
             balance -= payment - interest
             interest_cost[k] += interest
             if payment > 0:
@@ -286,6 +302,15 @@ def build_events(
         pay_date = add_months(as_of, 3 * q + 3) + dt.timedelta(days=14)
         if tax > 0 and pay_date < end:
             events.append(Event(pay_date, "taxes", -tax, f"Estimated tax, quarter {q + 1}"))
+
+    # 4b. Ledger-style extras: other monthly cash, a one-off item, owner cash ----
+    if adj.other_monthly_cash:
+        for k in range(n):
+            events.append(Event(window(k)[0] + dt.timedelta(days=2), "other_operating", adj.other_monthly_cash, "Other monthly cash (what-if)"))
+    if adj.one_time_cash_item and n > 2:
+        events.append(Event(window(2)[0] + dt.timedelta(days=10), "other_operating", adj.one_time_cash_item, "One-off cash item (what-if)"))
+    if adj.equity_injection:
+        events.append(Event(as_of + dt.timedelta(days=1), "financing_other", adj.equity_injection, "Owner cash in/out (what-if)"))
 
     # 5. One-time items -------------------------------------------------------
     for item in a.one_time:
@@ -440,18 +465,19 @@ def run_model(
     extras: Dict[str, Any] = {}
     events, projected, pnl = build_events(invoices, a, adj, bills, extras)
     horizon_end = add_months(g.as_of, g.horizon_months)
+    start_cash = g.starting_cash + adj.starting_cash_change
 
     monthly = aggregate(
         events,
         month_windows(g.as_of, g.horizon_months),
-        g.starting_cash,
+        start_cash,
         g.min_cash,
         lambda i, start: start.strftime("%b %Y"),
     )
     weekly = aggregate(
         events,
         week_windows(g.as_of),
-        g.starting_cash,
+        start_cash,
         g.min_cash,
         lambda i, start: f"Wk {i + 1}",
     )
@@ -464,8 +490,8 @@ def run_model(
         pnl=pnl,
         monthly=monthly,
         weekly=weekly,
-        kpis_monthly=compute_kpis(events, monthly, g.starting_cash, g.min_cash),
-        kpis_weekly=compute_kpis(events, weekly, g.starting_cash, g.min_cash),
+        kpis_monthly=compute_kpis(events, monthly, start_cash, g.min_cash),
+        kpis_weekly=compute_kpis(events, weekly, start_cash, g.min_cash),
         extras=extras,
     )
 

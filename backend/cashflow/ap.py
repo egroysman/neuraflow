@@ -157,10 +157,18 @@ def project_open_bills(
     payment_lag_days: float = 0.0,
     overdue_catchup_days: int = 14,
     dpo_change_days: int = 0,
+    top_vendor_delay_days: int = 0,
 ) -> List[Dict[str, Any]]:
     projected = []
     first_day = as_of + dt.timedelta(days=1)
-    for b in open_bills_at(bills, as_of):
+    open_bills = open_bills_at(bills, as_of)
+    top_vendor = None
+    if top_vendor_delay_days:
+        owed: Dict[str, float] = {}
+        for b in open_bills:
+            owed[b.vendor_id] = owed.get(b.vendor_id, 0.0) + b.open_amount
+        top_vendor = max(owed, key=owed.get) if owed else None
+    for b in open_bills:
         days_past_due = (as_of - b.due_date).days
         planned = b.due_date + dt.timedelta(days=round(payment_lag_days + dpo_change_days))
         if planned <= as_of:
@@ -168,6 +176,8 @@ def project_open_bills(
             overdue = max(1, (as_of - b.due_date).days)
             share = min(1.0, overdue / 90.0)
             planned = as_of + dt.timedelta(days=round(overdue_catchup_days * (1.0 - 0.7 * share)))
+        if top_vendor is not None and b.vendor_id == top_vendor:
+            planned += dt.timedelta(days=top_vendor_delay_days)
         planned = max(planned, first_day)
         projected.append(
             {

@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
+import { ArAssistantPanel } from "./ArAssistantPanel";
 import { Legend, StackedBars } from "./Charts";
 import { compact, money, pct } from "./lib";
 import { ReceivablesPanel } from "./Panels";
 import { Card, Stat } from "./ui";
 import type { Adjustments, Defaults, Forecast } from "./types";
+import type { ForecastBody } from "./lib";
 
 const EXISTING = "#60a5fa";
 const NEW_SALES = "#34d399";
@@ -13,11 +16,16 @@ export function ReceivablesTab({
   forecast,
   adjustments,
   calibration,
+  body,
+  onApplyWhatIfs,
 }: {
   forecast: Forecast;
   adjustments: Adjustments;
+  body: ForecastBody;
+  onApplyWhatIfs: (changes: Partial<Adjustments>) => void;
   calibration?: Defaults["data_summary"]["collections_calibration"];
 }) {
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const ar = forecast.ar;
   const impact = forecast.whatif_impact.ar;
   const months = forecast.monthly;
@@ -104,7 +112,9 @@ export function ReceivablesTab({
         </Card>
       </div>
 
-      <ReceivablesPanel ar={ar} calibration={calibration} />
+      <ArAssistantPanel body={body} customerId={customerId} onClearCustomer={() => setCustomerId(null)} onApply={onApplyWhatIfs} />
+
+      <ReceivablesPanel ar={ar} calibration={calibration} selected={customerId} onSelect={setCustomerId} />
     </div>
   );
 }

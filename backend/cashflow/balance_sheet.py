@@ -33,7 +33,7 @@ def build(run: Any) -> Dict[str, Any]:
     ap0 = sum(b["open_amount"] for b in bills) if bills else a.costs.opening_ap
     debt0 = sum(l.balance for l in a.loans)
     ppe0 = a.capex.opening_ppe_net
-    cash0 = a.general.starting_cash
+    cash0 = a.general.starting_cash + adj.starting_cash_change
     acc0 = ((ex.get("payroll") or {}).get("opening_accrued", 0.0)) if ex.get("payroll") else 0.0
     eq0 = cash0 + ar0 + ppe0 - ap0 - debt0 - acc0
 

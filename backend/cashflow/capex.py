@@ -71,7 +71,7 @@ def build(
     items_out: List[Dict[str, Any]] = []
 
     # Recurring maintenance capex, a share of revenue, paid mid-month.
-    pct = a.capex.maintenance_pct_revenue / 100.0
+    pct = a.capex.maintenance_pct_revenue / 100.0 * max(0.0, 1.0 + adj.maintenance_capex_change_pct / 100.0)
     life = a.capex.maintenance_life_months
     if pct > 0:
         for k in range(n):
@@ -85,7 +85,7 @@ def build(
                 depreciation[j] += spend / life
 
     for item in a.capex.items:
-        amount = item.amount * (scale if item.kind == "growth" else 1.0)
+        amount = item.amount * (scale if item.kind == "growth" else max(0.0, 1.0 + adj.maintenance_capex_change_pct / 100.0))
         when = item.date
         if item.kind == "growth" and adj.capex_delay_months:
             when = _add_months(item.date, adj.capex_delay_months)
@@ -111,7 +111,7 @@ def build(
         if not in_horizon or amount <= 0:
             continue
         k0 = month_index(when)
-        financed_share = 0.0 if item.funding == "cash" else 1.0 - item.down_payment_pct / 100.0
+        financed_share = 0.0 if item.funding == "cash" else 1.0 - min(100.0, max(0.0, item.down_payment_pct + adj.down_payment_change_pts)) / 100.0
         down = amount * (1.0 - financed_share)
         financed = amount * financed_share
         bucket = maint_cash if item.kind == "maintenance" else growth_cash

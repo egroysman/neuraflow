@@ -170,3 +170,38 @@ export async function downloadExport(
   link.remove();
   URL.revokeObjectURL(url);
 }
+
+
+export type AssistantReply = {
+  answer: string;
+  suggested_whatifs: Partial<Record<keyof Adjustments, number>>;
+  follow_ups: string[];
+};
+
+export async function askArAssistant(
+  body: {
+    message: string;
+    history: { role: "user" | "assistant"; content: string }[];
+    customer_id: string | null;
+    forecast: ForecastBody;
+  },
+  signal?: AbortSignal
+): Promise<AssistantReply> {
+  const res = await fetch(`${API_BASE}/cashflow/ar-assistant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    if (res.status === 503) throw new Error("The assistant isn't set up on the server yet (it needs an OpenAI key).");
+    if (res.status === 502) throw new Error("The assistant couldn't answer just now. Try again in a moment.");
+    throw new Error(await parseError(res));
+  }
+  const data = await res.json();
+  return {
+    answer: String(data.answer ?? ""),
+    suggested_whatifs: data.suggested_whatifs ?? {},
+    follow_ups: Array.isArray(data.follow_ups) ? data.follow_ups.filter((x: unknown) => typeof x === "string") : [],
+  };
+}
