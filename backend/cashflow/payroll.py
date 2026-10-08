@@ -12,7 +12,7 @@ import calendar
 import datetime as dt
 from typing import Any, Callable, Dict, List, Optional
 
-from .models import Assumptions, Employee, Payroll
+from .models import Adjustments, Assumptions, Employee, Payroll
 
 PERIODS_PER_YEAR = {"biweekly": 26, "semimonthly": 24, "monthly": 12}
 
@@ -61,12 +61,24 @@ def build(
     a: Assumptions,
     inflation_pct: float,
     window: Callable[[int], tuple],
+    adj: Optional[Adjustments] = None,
 ) -> Dict[str, Any]:
     p, g = a.payroll, a.general
+    adj = adj or Adjustments()
+    pay_scale = 1.0 + adj.salary_change_pct / 100.0
+    bonus_scale = max(0.0, 1.0 + adj.bonus_change_pct / 100.0)
+    emps = list(p.employees)
+    if adj.extra_hires:
+        active = [e for e in emps if e.term_date is None and e.hire_date <= g.as_of]
+        avg_base = sum(e.annual_base() for e in active) / len(active) if active else 70000.0
+        avg_ben = sum(e.benefits_monthly for e in active) / len(active) if active else 500.0
+        for i in range(adj.extra_hires):
+            emps.append(Employee(id=f"WI{i + 1:02d}", department="What-if hires", title="Added hire", annual_salary=avg_base,
+                                 hire_date=g.as_of + dt.timedelta(days=30), benefits_monthly=avg_ben))
     n, as_of = g.horizon_months, g.as_of
     end = window(n - 1)[1]
     tax = p.employer_tax_pct / 100.0
-    raise_pct = p.salary_growth_pct_annual + inflation_pct
+    raise_pct = p.salary_growth_pct_annual + inflation_pct + adj.raise_change_pct_pts
     per_year = PERIODS_PER_YEAR[p.pay_frequency]
     events: List[tuple] = []
     runs: List[Dict[str, Any]] = []
@@ -87,16 +99,16 @@ def build(
         heads = 0
         if not runs and not events and lo < as_of:
             # first run pays work already done before the start date: that is owed at day 0
-            for e in p.employees:
+            for e in emps:
                 done = _overlap_days(e, lo, as_of)
                 if done > 0:
-                    opening_accrued += e.annual_base() / per_year * (done / span) * (1.0 + tax)
-        for e in p.employees:
+                    opening_accrued += e.annual_base() * pay_scale / per_year * (done / span) * (1.0 + tax)
+        for e in emps:
             days = _overlap_days(e, lo, hi)
             if days <= 0:
                 continue
             heads += 1
-            gross += e.annual_base() / per_year * (days / span) * _raise_factor(as_of, d, p.raise_month, raise_pct)
+            gross += e.annual_base() * pay_scale / per_year * (days / span) * _raise_factor(as_of, d, p.raise_month, raise_pct)
         if gross > 0:
             total = gross * (1.0 + tax)
             events.append((d, -total, f"Payroll run ({heads} paid)"))
@@ -107,24 +119,24 @@ def build(
     benefits_total: List[float] = []
     bonus_total: List[float] = []
     headcount: List[int] = []
-    dept_names = sorted({e.department for e in p.employees})
+    dept_names = sorted({e.department for e in emps})
     by_dept: Dict[str, List[float]] = {k: [0.0] * n for k in dept_names}
     for k in range(n):
         lo, hi = window(k)
         span = (hi - lo).days
         wages = bonus = ben = 0.0
-        for e in p.employees:
+        for e in emps:
             days = _overlap_days(e, lo, hi)
             if days <= 0:
                 continue
             frac = days / span
             f = _raise_factor(as_of, lo, p.raise_month, raise_pct)
-            w = e.annual_base() / 12.0 * frac * f
+            w = e.annual_base() * pay_scale / 12.0 * frac * f
             b = 0.0
             if lo.month == p.bonus_month and e.bonus_pct:
                 year_ago = lo - dt.timedelta(days=365)
                 earned = min(1.0, _overlap_days(e, year_ago, lo) / 365.0) if e.hire_date > year_ago else 1.0
-                b = e.annual_base() * f * e.bonus_pct / 100.0 * earned
+                b = e.annual_base() * pay_scale * f * e.bonus_pct / 100.0 * earned * bonus_scale
             bf = e.benefits_monthly * frac
             wages += w
             bonus += b
@@ -133,7 +145,7 @@ def build(
         monthly.append((wages + bonus) * (1.0 + tax) + ben)
         benefits_total.append(ben)
         bonus_total.append(bonus)
-        headcount.append(sum(1 for e in p.employees if _overlap_days(e, hi - dt.timedelta(days=1), hi) > 0))
+        headcount.append(sum(1 for e in emps if _overlap_days(e, hi - dt.timedelta(days=1), hi) > 0))
         if bonus > 0:
             pay = dt.date(lo.year, lo.month, 15)
             if pay < lo:

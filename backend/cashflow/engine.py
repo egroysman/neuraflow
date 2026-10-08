@@ -126,7 +126,7 @@ def build_events(
     """
     g = a.general
     macro = a.macro if a.macro.apply else None
-    rate_delta = macro.rate_change_pts if macro else 0.0
+    rate_delta = (macro.rate_change_pts if macro else 0.0) + adj.rate_change_pts
     inflation = macro.cost_inflation_pct if macro else 0.0
     demand = macro.demand_growth_pct if macro else 0.0
     n = g.horizon_months
@@ -139,7 +139,8 @@ def build_events(
 
     # 1. Existing receivables ------------------------------------------------
     projected = ar.project_open_invoices(
-        invoices, as_of, a.collections, adj.collection_delay_days, adj.extra_bad_debt_pct
+        invoices, as_of, a.collections, adj.collection_delay_days, adj.extra_bad_debt_pct,
+        adj.collectability_change_pts, adj.past_due_delay_days, adj.top_customer_delay_days,
     )
     for item in projected:
         events.append(
@@ -189,7 +190,7 @@ def build_events(
 
     roster_payroll = None
     if a.payroll.use_roster and a.payroll.employees:
-        roster_payroll = payroll_mod.build(a, inflation, window)
+        roster_payroll = payroll_mod.build(a, inflation, window, adj)
         for when, amount, label in roster_payroll["events"]:
             events.append(Event(when, "payroll", amount, label))
 
@@ -222,9 +223,10 @@ def build_events(
         if roster_payroll is not None:
             payroll_cost.append(roster_payroll["monthly"][k])
         else:
-            heads = a.payroll.headcount + sum(h.count for h in a.payroll.hires if h.month <= k)
-            raise_factor = (1.0 + (a.payroll.salary_growth_pct_annual + inflation) / 100.0) ** (k / 12.0)
-            payroll = heads * a.payroll.avg_salary * raise_factor / 12.0 * (1.0 + a.payroll.burden_pct / 100.0)
+            heads = a.payroll.headcount + sum(h.count for h in a.payroll.hires if h.month <= k) + (adj.extra_hires if k >= 1 else 0)
+            raise_factor = (1.0 + (a.payroll.salary_growth_pct_annual + inflation + adj.raise_change_pct_pts) / 100.0) ** (k / 12.0)
+            payroll = (heads * a.payroll.avg_salary * (1.0 + adj.salary_change_pct / 100.0) * raise_factor / 12.0
+                       * (1.0 + a.payroll.burden_pct / 100.0))
             payroll_cost.append(payroll)
             events.append(Event(start + dt.timedelta(days=14), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
             events.append(Event(finish - dt.timedelta(days=1), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
@@ -275,7 +277,7 @@ def build_events(
         revenue[k] - cogs[k] - payroll_cost[k] - opex_cost[k] - interest_cost[k] - depreciation_cost[k]
         for k in range(n)
     ]
-    rate = g.tax_rate_pct / 100.0
+    rate = max(0.0, g.tax_rate_pct + adj.tax_rate_change_pts) / 100.0
     tax_expense = [0.0] * n
     for q in range(n // 3):
         profit = sum(pretax[3 * q : 3 * q + 3])
@@ -572,6 +574,7 @@ def forecast(
             "opening_ap_lump": a.costs.opening_ap,
         },
         "capex": run.extras["capex"],
+        "whatif_impact": whatif_impact(invoices, a, total_adj, bills, run),
         "payroll": run.extras.get("payroll"),
         "balance_sheet": balance_sheet.build(run),
         "gl": gl_mod.compare(gl_mod.prepare(gl_data), g.as_of, run.pnl) if gl_data else None,
@@ -588,6 +591,23 @@ def forecast(
         },
     }
     return result
+
+
+def whatif_impact(invoices, a, adj, bills, run) -> Dict[str, Any]:
+    """Cash effect of each group of what-if sliders: the same model with that group switched off."""
+    out: Dict[str, Any] = {}
+    base_end, base_low = run.kpis_monthly["ending_cash"], run.kpis_monthly["lowest_balance"]
+    for group, fields in Adjustments.GROUPS.items():
+        if not any(getattr(adj, f) for f in fields):
+            out[group] = {"active": False, "ending_cash_impact": 0.0, "lowest_balance_impact": 0.0}
+            continue
+        other = run_model(invoices, a, adj.without(group), bills)
+        out[group] = {
+            "active": True,
+            "ending_cash_impact": base_end - other.kpis_monthly["ending_cash"],
+            "lowest_balance_impact": base_low - other.kpis_monthly["lowest_balance"],
+        }
+    return out
 
 
 def macro_effect(

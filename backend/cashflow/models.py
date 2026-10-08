@@ -7,7 +7,7 @@ assumptions, so the underlying assumptions are never mutated by a scenario.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Dict, List, Literal, Optional
+from typing import ClassVar, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -198,6 +198,34 @@ class Adjustments(BaseModel):
     opex_change_pct: float = Field(0, ge=-50, le=100)
     dpo_change_days: int = Field(0, ge=-60, le=120)
     capex_change_pct: float = Field(0, ge=-100, le=200, description="Growth capex up/down")
+    # receivables
+    collectability_change_pts: float = Field(0, ge=-50, le=20, description="Points added to the collectability of existing receivables")
+    past_due_delay_days: int = Field(0, ge=0, le=120, description="Extra days before already-late invoices are paid")
+    top_customer_delay_days: int = Field(0, ge=0, le=120, description="Extra days before the customer owing the most pays")
+    # payroll
+    raise_change_pct_pts: float = Field(0, ge=-10, le=20, description="Added to the annual raise")
+    extra_hires: int = Field(0, ge=0, le=50, description="Additional hires starting next month at the average base pay")
+    bonus_change_pct: float = Field(0, ge=-100, le=200, description="Scales bonuses")
+    salary_change_pct: float = Field(0, ge=-30, le=50, description="Across-the-board change to base pay")
+    # capex, financing, tax
+    capex_delay_months: int = Field(0, ge=0, le=24, description="Push growth capex later")
+    rate_change_pts: float = Field(0, ge=-10, le=10, description="Change in rates on floating loans and new financed capex")
+    tax_rate_change_pts: float = Field(0, ge=-30, le=30, description="Added to the income tax rate")
+
+    GROUPS: ClassVar[Dict[str, List[str]]] = {
+        "ar": ["collection_delay_days", "extra_bad_debt_pct", "collectability_change_pts", "past_due_delay_days", "top_customer_delay_days"],
+        "payroll": ["raise_change_pct_pts", "extra_hires", "bonus_change_pct", "salary_change_pct"],
+        "payables": ["dpo_change_days", "cogs_change_pct_pts"],
+        "capex": ["capex_change_pct", "capex_delay_months"],
+        "financing": ["rate_change_pts", "tax_rate_change_pts"],
+        "operations": ["revenue_change_pct", "growth_change_pct_pts", "opex_change_pct"],
+    }
+
+    def without(self, group: str) -> "Adjustments":
+        data = self.model_dump()
+        for name in self.GROUPS[group]:
+            data[name] = 0
+        return Adjustments(**data)
 
     def plus(self, other: "Adjustments") -> "Adjustments":
         return Adjustments(

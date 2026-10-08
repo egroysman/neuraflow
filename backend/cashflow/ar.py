@@ -235,8 +235,17 @@ def project_open_invoices(
     collections: Collections,
     delay_days: int = 0,
     extra_bad_debt_pct: float = 0.0,
+    collectability_change_pts: float = 0.0,
+    past_due_delay_days: int = 0,
+    top_customer_delay_days: int = 0,
 ) -> List[Dict[str, Any]]:
     stats = customer_stats(invoices, as_of)
+    top_customer = None
+    if top_customer_delay_days:
+        owed: Dict[str, float] = {}
+        for inv in open_invoices_at(invoices, as_of):
+            owed[inv.customer_id] = owed.get(inv.customer_id, 0.0) + inv.open_amount
+        top_customer = max(owed, key=owed.get) if owed else None
     portfolio = portfolio_days_to_pay(invoices, as_of)
     collectability = collections.collectability_pct.model_dump()
     lags = collections.overdue_lag_days.model_dump()
@@ -253,8 +262,12 @@ def project_open_invoices(
         else:
             expected = as_of + dt.timedelta(days=round(lags[bucket]))
         expected += dt.timedelta(days=delay_days)
+        if days_past_due > 0:
+            expected += dt.timedelta(days=past_due_delay_days)
+        if top_customer is not None and inv.customer_id == top_customer:
+            expected += dt.timedelta(days=top_customer_delay_days)
         expected = max(expected, as_of + dt.timedelta(days=1))
-        probability = collectability[bucket] / 100.0 * haircut
+        probability = min(100.0, max(0.0, collectability[bucket] + collectability_change_pts)) / 100.0 * haircut
         projected.append(
             {
                 "invoice_id": inv.invoice_id,

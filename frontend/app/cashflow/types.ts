@@ -20,6 +20,16 @@ export type Adjustments = {
   opex_change_pct: number;
   dpo_change_days: number;
   capex_change_pct: number;
+  collectability_change_pts: number;
+  past_due_delay_days: number;
+  top_customer_delay_days: number;
+  raise_change_pct_pts: number;
+  extra_hires: number;
+  bonus_change_pct: number;
+  salary_change_pct: number;
+  capex_delay_months: number;
+  rate_change_pts: number;
+  tax_rate_change_pts: number;
 };
 
 export type OpexLine = {
@@ -239,11 +249,14 @@ export type Forecast = {
   };
   ap: ApSummary;
   capex: CapexResult;
+  whatif_impact: Record<WhatIfGroup, { active: boolean; ending_cash_impact: number; lowest_balance_impact: number }>;
   payroll: PayrollResult | null;
   balance_sheet: BalanceSheet;
   gl: GlCompare | null;
   macro: MacroEffect;
 };
+
+export type WhatIfGroup = "ar" | "payroll" | "payables" | "capex" | "financing" | "operations";
 
 export type PayrollResult = {
   employees: {
@@ -402,6 +415,7 @@ export type ApSummary = {
 export type CapexResult = {
   items: (CapexItem & {
     planned_amount: number;
+    planned_date: string;
     in_horizon: boolean;
     cash_at_purchase: number;
     financed: number;
@@ -551,6 +565,16 @@ export const NO_ADJUSTMENTS: Adjustments = {
   opex_change_pct: 0,
   dpo_change_days: 0,
   capex_change_pct: 0,
+  collectability_change_pts: 0,
+  past_due_delay_days: 0,
+  top_customer_delay_days: 0,
+  raise_change_pct_pts: 0,
+  extra_hires: 0,
+  bonus_change_pct: 0,
+  salary_change_pct: 0,
+  capex_delay_months: 0,
+  rate_change_pts: 0,
+  tax_rate_change_pts: 0,
 };
 
-export type TabId = "forecast" | "payroll" | "balance" | "gl" | "payables" | "capex" | "trends";
+export type TabId = "forecast" | "receivables" | "payroll" | "balance" | "gl" | "payables" | "capex" | "trends";

@@ -31,3 +31,7 @@ Payables, capex and trends
 - Forecast defaults (starting cash, revenue, cost of sales %, operating expense lines, term loan, depreciation, opening PP&E) come from the ledger's last three complete months and balances. "Apply ledger baselines" in the GL & Actuals tab re-applies them.
 - **Balance sheet** rolls forward from the same events and P&L, with equity as the balancing figure; the check row stays at zero.
 - Extra API: `GET /cashflow/gl`. The forecast response now includes `payroll`, `balance_sheet` and `gl`; the Excel export adds Payroll, Balance Sheet and GL vs Forecast sheets.
+
+## Receivables tab and tab-aware what-ifs
+
+The Receivables (AR) tab holds the aging, customer table and customer-cash charts. The what-if panel on the left shows the levers for the tab you are on (receivables: pay speed, late invoices, largest customer, collectability, bad debt; payroll: base pay, raises, extra hires, bonuses; capex: size, delay, rates; and so on). Every lever stays applied when you switch tabs, and the panel lists any that are active elsewhere. The forecast response includes `whatif_impact`: the effect of each group of levers on ending cash and the lowest balance.

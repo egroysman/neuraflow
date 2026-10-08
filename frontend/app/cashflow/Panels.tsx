@@ -13,6 +13,8 @@ import type {
   Kpis,
   Period,
   Scenario,
+  TabId,
+  WhatIfGroup,
 } from "./types";
 import { NO_ADJUSTMENTS } from "./types";
 
@@ -220,7 +222,7 @@ export function StatementTable({
 
 /* ----------------------------------------------------- Scenario + what-if */
 
-const SLIDERS: {
+type Slider = {
   key: keyof Adjustments;
   label: string;
   unit: string;
@@ -229,16 +231,56 @@ const SLIDERS: {
   step: number;
   digits: number;
   hint: string;
-}[] = [
+};
+
+const SLIDER_LIST: Slider[] = [
   { key: "collection_delay_days", label: "Customers pay slower (+) or faster (−)", unit: "days", min: -30, max: 60, step: 1, digits: 0, hint: "Shifts every receivable and new-sale collection" },
+  { key: "past_due_delay_days", label: "Late invoices pay even later", unit: "days", min: 0, max: 90, step: 1, digits: 0, hint: "Extra delay on invoices already past due" },
+  { key: "top_customer_delay_days", label: "Largest customer pays later", unit: "days", min: 0, max: 90, step: 1, digits: 0, hint: "Delays only the customer who owes you the most" },
+  { key: "collectability_change_pts", label: "Collectability of open invoices", unit: "pts", min: -30, max: 10, step: 1, digits: 0, hint: "Added to every aging bucket's collect %" },
   { key: "extra_bad_debt_pct", label: "Extra bad debt", unit: "%", min: 0, max: 20, step: 0.5, digits: 1, hint: "Additional share of receivables never collected" },
   { key: "revenue_change_pct", label: "New sales volume", unit: "%", min: -40, max: 40, step: 1, digits: 0, hint: "Level shift on forecast monthly invoicing" },
   { key: "growth_change_pct_pts", label: "Monthly growth", unit: "pts", min: -3, max: 3, step: 0.1, digits: 1, hint: "Added to the monthly growth assumption" },
   { key: "cogs_change_pct_pts", label: "Cost of sales", unit: "pts", min: -10, max: 10, step: 0.5, digits: 1, hint: "Percentage points of revenue" },
   { key: "opex_change_pct", label: "Operating expenses", unit: "%", min: -30, max: 30, step: 1, digits: 0, hint: "Scales every opex line" },
   { key: "dpo_change_days", label: "Pay vendors slower (+) or faster (−)", unit: "days", min: -30, max: 30, step: 1, digits: 0, hint: "Shifts open bills and new vendor payments" },
+  { key: "salary_change_pct", label: "Base pay, across the board", unit: "%", min: -20, max: 20, step: 1, digits: 0, hint: "Raises or cuts everyone's base pay" },
+  { key: "raise_change_pct_pts", label: "Annual raise", unit: "pts", min: -5, max: 10, step: 0.5, digits: 1, hint: "Added to the raise given in the raise month" },
+  { key: "extra_hires", label: "Extra hires", unit: "people", min: 0, max: 20, step: 1, digits: 0, hint: "Start next month at the average base pay" },
+  { key: "bonus_change_pct", label: "Bonus pool", unit: "%", min: -100, max: 100, step: 10, digits: 0, hint: "Scales every bonus (−100% = none)" },
   { key: "capex_change_pct", label: "Growth capex", unit: "%", min: -100, max: 100, step: 5, digits: 0, hint: "Defer or accelerate growth capex (it also follows sales changes)" },
+  { key: "capex_delay_months", label: "Delay growth capex", unit: "months", min: 0, max: 12, step: 1, digits: 0, hint: "Pushes every growth purchase later" },
+  { key: "rate_change_pts", label: "Interest rates", unit: "pts", min: -3, max: 5, step: 0.25, digits: 2, hint: "Floating loans and new financed capex" },
+  { key: "tax_rate_change_pts", label: "Income tax rate", unit: "pts", min: -10, max: 15, step: 1, digits: 0, hint: "Added to the tax rate on the General settings" },
 ];
+const SLIDER_BY_KEY = Object.fromEntries(SLIDER_LIST.map((s) => [s.key, s])) as Record<keyof Adjustments, Slider>;
+
+const CORE_KEYS: (keyof Adjustments)[] = [
+  "revenue_change_pct", "growth_change_pct_pts", "collection_delay_days", "extra_bad_debt_pct",
+  "cogs_change_pct_pts", "opex_change_pct", "dpo_change_days", "capex_change_pct",
+];
+
+/** Which sliders each tab shows, which groups' cash impact it reports, and a line about it. */
+const TAB_WHATIFS: Record<TabId, { title: string; keys: (keyof Adjustments)[]; groups: WhatIfGroup[]; note: string }> = {
+  forecast: { title: "What-ifs: whole forecast", keys: [...CORE_KEYS, "rate_change_pts", "tax_rate_change_pts"], groups: [], note: "Levers for the whole model. Open another tab for more detailed levers." },
+  receivables: {
+    title: "What-ifs: receivables",
+    keys: ["collection_delay_days", "past_due_delay_days", "top_customer_delay_days", "collectability_change_pts", "extra_bad_debt_pct", "revenue_change_pct", "growth_change_pct_pts"],
+    groups: ["ar"],
+    note: "How fast and how fully customers pay.",
+  },
+  payroll: { title: "What-ifs: payroll", keys: ["salary_change_pct", "raise_change_pct_pts", "extra_hires", "bonus_change_pct"], groups: ["payroll"], note: "Hiring, pay and bonuses." },
+  payables: { title: "What-ifs: payables", keys: ["dpo_change_days", "cogs_change_pct_pts", "opex_change_pct", "revenue_change_pct"], groups: ["payables"], note: "When you pay vendors and what they cost." },
+  capex: { title: "What-ifs: capex & financing", keys: ["capex_change_pct", "capex_delay_months", "rate_change_pts", "revenue_change_pct"], groups: ["capex", "financing"], note: "Size, timing and financing cost of purchases." },
+  balance: {
+    title: "What-ifs: balance sheet drivers",
+    keys: ["collection_delay_days", "extra_bad_debt_pct", "dpo_change_days", "capex_change_pct", "rate_change_pts", "tax_rate_change_pts", "opex_change_pct", "revenue_change_pct"],
+    groups: [],
+    note: "Everything here moves receivables, payables, debt or equity.",
+  },
+  gl: { title: "What-ifs: actuals vs forecast", keys: [...CORE_KEYS, "rate_change_pts", "tax_rate_change_pts"], groups: [], note: "Compare scenarios with what the ledger shows." },
+  trends: { title: "What-ifs: trends", keys: ["revenue_change_pct", "growth_change_pct_pts", "collection_delay_days", "dpo_change_days"], groups: [], note: "Try a trend continuing or reversing." },
+};
 
 const SCENARIOS: Scenario[] = ["base", "best", "worst"];
 
@@ -251,7 +293,19 @@ const PRESET_LABELS: Record<keyof Adjustments, string> = {
   opex_change_pct: "opex",
   dpo_change_days: "vendor timing",
   capex_change_pct: "growth capex",
+  collectability_change_pts: "collectability",
+  past_due_delay_days: "late invoices",
+  top_customer_delay_days: "largest customer",
+  raise_change_pct_pts: "raises",
+  extra_hires: "extra hires",
+  bonus_change_pct: "bonuses",
+  salary_change_pct: "base pay",
+  capex_delay_months: "capex delay",
+  rate_change_pts: "rates",
+  tax_rate_change_pts: "tax rate",
 };
+
+const signedMoney = (v: number) => `${v >= 0 ? "+" : "-"}${money(Math.abs(v))}`;
 
 export function ScenarioPanel({
   scenario,
@@ -260,6 +314,8 @@ export function ScenarioPanel({
   onAdjustments,
   presets,
   comparison,
+  tab = "forecast",
+  impact,
 }: {
   scenario: Scenario;
   onScenario: (s: Scenario) => void;
@@ -267,10 +323,19 @@ export function ScenarioPanel({
   onAdjustments: (a: Adjustments) => void;
   presets: Defaults["scenarios"];
   comparison: Forecast["comparison"] | undefined;
+  tab?: TabId;
+  impact?: Forecast["whatif_impact"];
 }) {
-  const dirty = (Object.keys(NO_ADJUSTMENTS) as (keyof Adjustments)[]).some((k) => adjustments[k] !== 0);
+  const allKeys = Object.keys(NO_ADJUSTMENTS) as (keyof Adjustments)[];
+  const dirty = allKeys.some((k) => adjustments[k] !== 0);
   const preset = presets[scenario].adjustments;
   const changes = (Object.keys(preset) as (keyof Adjustments)[]).filter((k) => preset[k] !== 0);
+  const cfg = TAB_WHATIFS[tab];
+  const shown = cfg.keys.map((k) => SLIDER_BY_KEY[k]);
+  const hidden = allKeys.filter((k) => !cfg.keys.includes(k) && adjustments[k] !== 0);
+  const activeImpact = impact ? cfg.groups.map((g) => impact[g]).filter((i) => i && i.active) : [];
+  const endImpact = activeImpact.reduce((sum, i) => sum + i.ending_cash_impact, 0);
+  const lowImpact = activeImpact.reduce((sum, i) => sum + i.lowest_balance_impact, 0);
 
   return (
     <Card
@@ -310,35 +375,57 @@ export function ScenarioPanel({
               .join(", ")}.`}
       </p>
 
-      <div className="mt-3 space-y-3.5">
-        {SLIDERS.map((s) => {
-          const value = adjustments[s.key];
-          const id = `slider-${s.key}`;
-          return (
-            <div key={s.key}>
-              <div className="flex items-baseline justify-between gap-2">
-                <label htmlFor={id} className="text-xs font-medium text-[#d1d5db]">
-                  {s.label}
-                </label>
-                <span className={`text-xs font-semibold tabular-nums ${value === 0 ? "text-[#6b7280]" : "text-[#60a5fa]"}`}>
-                  {signed(value, s.digits)} {s.unit}
-                </span>
+      <div className="mt-3 border-t border-[#1f2937] pt-3" data-testid="whatif-section" data-tab={tab}>
+        <h3 className="m-0 text-sm font-semibold text-[#e5e7eb]">{cfg.title}</h3>
+        <p className="mt-0.5 text-[11px] text-[#6b7280]">{cfg.note}</p>
+
+        {activeImpact.length > 0 && (
+          <div className="mt-2 rounded-lg border border-[#1e3a8a] bg-[#0c1a33] px-3 py-2 text-xs text-[#bfdbfe]" role="status">
+            Your changes here move ending cash by{" "}
+            <strong className={endImpact < 0 ? "text-[#fca5a5]" : "text-[#6ee7b7]"}>{signedMoney(endImpact)}</strong> and the lowest balance by{" "}
+            <strong className={lowImpact < 0 ? "text-[#fca5a5]" : "text-[#6ee7b7]"}>{signedMoney(lowImpact)}</strong>.
+          </div>
+        )}
+
+        <div className="mt-3 space-y-3.5">
+          {shown.map((s) => {
+            const value = adjustments[s.key];
+            const id = `slider-${s.key}`;
+            return (
+              <div key={s.key}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <label htmlFor={id} className="text-xs font-medium text-[#d1d5db]">
+                    {s.label}
+                  </label>
+                  <span className={`text-xs font-semibold tabular-nums ${value === 0 ? "text-[#6b7280]" : "text-[#60a5fa]"}`}>
+                    {signed(value, s.digits)} {s.unit}
+                  </span>
+                </div>
+                <input
+                  id={id}
+                  type="range"
+                  min={s.min}
+                  max={s.max}
+                  step={s.step}
+                  value={value}
+                  onChange={(e) => onAdjustments({ ...adjustments, [s.key]: Number(e.target.value) })}
+                  className="mt-1 h-1.5 w-full cursor-pointer accent-[#60a5fa]"
+                  aria-valuetext={`${signed(value, s.digits)} ${s.unit}`}
+                />
+                <div className="text-[11px] text-[#6b7280]">{s.hint}</div>
               </div>
-              <input
-                id={id}
-                type="range"
-                min={s.min}
-                max={s.max}
-                step={s.step}
-                value={value}
-                onChange={(e) => onAdjustments({ ...adjustments, [s.key]: Number(e.target.value) })}
-                className="mt-1 h-1.5 w-full cursor-pointer accent-[#60a5fa]"
-                aria-valuetext={`${signed(value, s.digits)} ${s.unit}`}
-              />
-              <div className="text-[11px] text-[#6b7280]">{s.hint}</div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+
+        {hidden.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#78350f] bg-[#2b1d07] px-3 py-2 text-xs text-[#fde68a]" role="status">
+            <span>
+              Also active on other tabs: {hidden.map((k) => `${PRESET_LABELS[k]} ${signed(adjustments[k], SLIDER_BY_KEY[k].digits)} ${SLIDER_BY_KEY[k].unit}`).join(", ")}.
+            </span>
+            <GhostButton onClick={() => onAdjustments({ ...adjustments, ...Object.fromEntries(hidden.map((k) => [k, 0])) })}>Clear those</GhostButton>
+          </div>
+        )}
       </div>
     </Card>
   );
