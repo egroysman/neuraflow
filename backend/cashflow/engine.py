@@ -17,8 +17,11 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import ar
+from . import ap, ar, capex
 from .models import (
+    AP,
+    Capex,
+    CapexItem,
     SCENARIO_LABELS,
     SCENARIO_PRESETS,
     Adjustments,
@@ -41,13 +44,14 @@ WEEKS = 13
 CATEGORIES: List[Tuple[str, str, str]] = [
     ("ar_collections", "Collections: existing receivables", "operating"),
     ("new_sales_collections", "Collections: new sales", "operating"),
-    ("cogs_vendors", "Vendors & cost of sales", "operating"),
+    ("ap_open_bills", "Payables: open vendor bills", "operating"),
+    ("cogs_vendors", "Vendors & cost of sales: new purchases", "operating"),
     ("payroll", "Payroll & benefits", "operating"),
     ("opex", "Operating expenses", "operating"),
     ("taxes", "Income taxes", "operating"),
     ("other_operating", "Other operating items", "operating"),
     ("capex_investing", "Capex & other investing", "investing"),
-    ("debt_service", "Debt service", "financing"),
+    ("debt_service", "Debt service & lease payments", "financing"),
     ("financing_other", "Other financing", "financing"),
 ]
 CATEGORY_KEYS = [c[0] for c in CATEGORIES]
@@ -108,9 +112,22 @@ class ModelRun:
 
 
 def build_events(
-    invoices: List[ar.Invoice], a: Assumptions, adj: Adjustments
+    invoices: List[ar.Invoice],
+    a: Assumptions,
+    adj: Adjustments,
+    bills: Optional[List[ap.Bill]] = None,
+    extras: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Event], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Turn assumptions into dated cash events.
+
+    ``extras`` is an optional out-parameter that receives the projected vendor
+    bills and the capex schedule so callers can report on them.
+    """
     g = a.general
+    macro = a.macro if a.macro.apply else None
+    rate_delta = macro.rate_change_pts if macro else 0.0
+    inflation = macro.cost_inflation_pct if macro else 0.0
+    demand = macro.demand_growth_pct if macro else 0.0
     n = g.horizon_months
     as_of = g.as_of
     end = add_months(as_of, n)
@@ -135,6 +152,8 @@ def build_events(
 
     # 2. New sales, vendors and the rest of the operating plan ---------------
     growth = (a.sales.growth_pct_monthly + adj.growth_change_pct_pts) / 100.0
+    if demand:
+        growth += (1.0 + demand / 100.0) ** (1.0 / 12.0) - 1.0
     level = 1.0 + adj.revenue_change_pct / 100.0
     bad_debt = min(1.0, max(0.0, (a.sales.bad_debt_pct + adj.extra_bad_debt_pct) / 100.0))
     dso = max(0.0, a.sales.dso_days + adj.collection_delay_days)
@@ -143,8 +162,19 @@ def build_events(
     opex_factor = 1.0 + adj.opex_change_pct / 100.0
     collection_profile = [(-15, 0.25), (0, 0.50), (15, 0.25)]
 
-    # Vendor payables that already exist at the start date.
-    if a.costs.opening_ap > 0:
+    # Vendor payables that already exist at the start date: bill by bill when
+    # the bills are available, otherwise a lump spread over the payment cycle.
+    projected_bills: List[Dict[str, Any]] = []
+    if a.ap.use_open_bills and bills:
+        projected_bills = ap.project_open_bills(
+            bills, as_of, a.ap.payment_lag_days, a.ap.overdue_catchup_days, adj.dpo_change_days
+        )
+        for item in projected_bills:
+            events.append(
+                Event(item["expected_date"], "ap_open_bills", -item["open_amount"],
+                      f"Bill {item['bill_id']} ({item['vendor_name']})")
+            )
+    elif a.costs.opening_ap > 0:
         chunks = max(1, min(35, math.ceil(max(7.0, dpo) / 7.0)))
         for i in range(chunks):
             events.append(
@@ -183,7 +213,7 @@ def build_events(
 
         # Payroll: headcount, annual raises, hiring plan; paid twice a month.
         heads = a.payroll.headcount + sum(h.count for h in a.payroll.hires if h.month <= k)
-        raise_factor = (1.0 + a.payroll.salary_growth_pct_annual / 100.0) ** (k / 12.0)
+        raise_factor = (1.0 + (a.payroll.salary_growth_pct_annual + inflation) / 100.0) ** (k / 12.0)
         payroll = heads * a.payroll.avg_salary * raise_factor / 12.0 * (1.0 + a.payroll.burden_pct / 100.0)
         payroll_cost.append(payroll)
         events.append(Event(start + dt.timedelta(days=14), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
@@ -197,6 +227,8 @@ def build_events(
                 continue
             if line.kind == "fixed":
                 amount = line.amount * (1.0 + line.growth_pct_monthly / 100.0) ** (k - line.start_month)
+                if inflation:
+                    amount *= (1.0 + inflation / 100.0) ** (k / 12.0)
             else:
                 amount = line.amount / 100.0 * rev
             amount *= opex_factor
@@ -210,7 +242,8 @@ def build_events(
         for k in range(n):
             if balance <= 1e-9:
                 break
-            interest = balance * loan.annual_rate_pct / 100.0 / 12.0
+            rate = loan.annual_rate_pct + (rate_delta if loan.floating else 0.0)
+            interest = balance * max(0.0, rate) / 100.0 / 12.0
             payment = min(loan.monthly_payment, balance + interest)
             balance -= payment - interest
             interest_cost[k] += interest
@@ -219,9 +252,18 @@ def build_events(
                     Event(window(k)[0] + dt.timedelta(days=9), "debt_service", -payment, loan.name)
                 )
 
+    # 3b. Capex plan: purchases, financing payments, depreciation ----------------
+    plan = capex.build(a, adj, revenue, lambda k: window(k)[0], rate_delta)
+    for when, category, amount, label in plan["events"]:
+        events.append(Event(when, category, amount, label))
+    for k in range(n):
+        interest_cost[k] += plan["interest"][k]
+    depreciation_cost = plan["depreciation"]
+
     # 4. Taxes: paid quarterly on positive pre-tax profit ---------------------
     pretax = [
-        revenue[k] - cogs[k] - payroll_cost[k] - opex_cost[k] - interest_cost[k] for k in range(n)
+        revenue[k] - cogs[k] - payroll_cost[k] - opex_cost[k] - interest_cost[k] - depreciation_cost[k]
+        for k in range(n)
     ]
     rate = g.tax_rate_pct / 100.0
     for q in range(n // 3):
@@ -252,12 +294,16 @@ def build_events(
                 "gross_profit": gross,
                 "payroll": payroll_cost[k],
                 "opex": opex_cost[k],
+                "depreciation": depreciation_cost[k],
                 "interest": interest_cost[k],
                 "pretax_profit": pretax[k],
             }
         )
 
     events.sort(key=lambda e: (e.date, e.category))
+    if extras is not None:
+        extras["projected_bills"] = projected_bills
+        extras["capex"] = plan
     return events, projected, pnl
 
 
@@ -368,9 +414,15 @@ def compute_kpis(
 # --------------------------------------------------------------------------- #
 
 
-def run_model(invoices: List[ar.Invoice], a: Assumptions, adj: Adjustments) -> ModelRun:
+def run_model(
+    invoices: List[ar.Invoice],
+    a: Assumptions,
+    adj: Adjustments,
+    bills: Optional[List[ap.Bill]] = None,
+) -> ModelRun:
     g = a.general
-    events, projected, pnl = build_events(invoices, a, adj)
+    extras: Dict[str, Any] = {}
+    events, projected, pnl = build_events(invoices, a, adj, bills, extras)
     horizon_end = add_months(g.as_of, g.horizon_months)
 
     monthly = aggregate(
@@ -398,6 +450,7 @@ def run_model(invoices: List[ar.Invoice], a: Assumptions, adj: Adjustments) -> M
         weekly=weekly,
         kpis_monthly=compute_kpis(events, monthly, g.starting_cash, g.min_cash),
         kpis_weekly=compute_kpis(events, weekly, g.starting_cash, g.min_cash),
+        extras=extras,
     )
 
 
@@ -452,15 +505,20 @@ def build_alerts(run: ModelRun, aging: List[Dict[str, Any]]) -> List[Dict[str, s
 # --------------------------------------------------------------------------- #
 
 
-def forecast(rows: List[Dict[str, Any]], req: ForecastRequest) -> Dict[str, Any]:
+def forecast(
+    rows: List[Dict[str, Any]],
+    req: ForecastRequest,
+    bill_rows: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     invoices = ar.parse_invoices(rows)
+    bills = ap.parse_bills(bill_rows) if bill_rows else []
     a = req.assumptions
     total_adj = SCENARIO_PRESETS[req.scenario].plus(req.adjustments)
-    run = run_model(invoices, a, total_adj)
+    run = run_model(invoices, a, total_adj, bills)
 
     comparison: Dict[str, Any] = {}
     for name, preset in SCENARIO_PRESETS.items():
-        other = run if name == req.scenario else run_model(invoices, a, preset.plus(req.adjustments))
+        other = run if name == req.scenario else run_model(invoices, a, preset.plus(req.adjustments), bills)
         comparison[name] = {
             "label": SCENARIO_LABELS[name],
             "monthly_end_cash": [p["end_cash"] for p in other.monthly],
@@ -491,6 +549,15 @@ def forecast(rows: List[Dict[str, Any]], req: ForecastRequest) -> Dict[str, Any]
         "kpis": {"monthly": run.kpis_monthly, "weekly": run.kpis_weekly},
         "alerts": build_alerts(run, aging),
         "comparison": comparison,
+        "ap": ap.summarize_ap(
+            bills, run.extras.get("projected_bills", []), g.as_of, horizon_end
+        )
+        | {
+            "using_bills": bool(run.extras.get("projected_bills")),
+            "opening_ap_lump": a.costs.opening_ap,
+        },
+        "capex": run.extras["capex"],
+        "macro": macro_effect(invoices, a, total_adj, bills, run),
         "ar": {
             "open_total": open_total,
             "expected_total": expected_total,
@@ -505,7 +572,37 @@ def forecast(rows: List[Dict[str, Any]], req: ForecastRequest) -> Dict[str, Any]
     return result
 
 
-def default_assumptions(rows: List[Dict[str, Any]], today: Optional[dt.date] = None) -> Dict[str, Any]:
+def macro_effect(
+    invoices: List[ar.Invoice],
+    a: Assumptions,
+    adj: Adjustments,
+    bills: List[ap.Bill],
+    run: ModelRun,
+) -> Dict[str, Any]:
+    """What the macro overlay does to cash: the same model with it switched off."""
+    m = a.macro
+    result: Dict[str, Any] = {
+        "applied": bool(m.apply),
+        "rate_change_pts": m.rate_change_pts,
+        "cost_inflation_pct": m.cost_inflation_pct,
+        "demand_growth_pct": m.demand_growth_pct,
+        "ending_cash_impact": 0.0,
+        "lowest_balance_impact": 0.0,
+    }
+    if m.apply and (m.rate_change_pts or m.cost_inflation_pct or m.demand_growth_pct):
+        off = a.model_copy(deep=True)
+        off.macro.apply = False
+        base = run_model(invoices, off, adj, bills)
+        result["ending_cash_impact"] = run.kpis_monthly["ending_cash"] - base.kpis_monthly["ending_cash"]
+        result["lowest_balance_impact"] = run.kpis_monthly["lowest_balance"] - base.kpis_monthly["lowest_balance"]
+    return result
+
+
+def default_assumptions(
+    rows: List[Dict[str, Any]],
+    today: Optional[dt.date] = None,
+    bill_rows: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Defaults derived from the invoice data.
 
     Receivables inputs (start date, revenue run-rate, days-to-pay) come from the
@@ -516,6 +613,7 @@ def default_assumptions(rows: List[Dict[str, Any]], today: Optional[dt.date] = N
     summary = ar.derive_data_summary(rows)
     collections, calibration = ar.calibrate_collections(ar.parse_invoices(rows))
     summary["collections_calibration"] = calibration
+    bills = ap.parse_bills(bill_rows) if bill_rows else []
     today = today or dt.date.today()
     as_of = summary["as_of"] if summary["invoice_count"] else today
     revenue = summary["monthly_revenue"] or 100_000.0
@@ -523,6 +621,9 @@ def default_assumptions(rows: List[Dict[str, Any]], today: Optional[dt.date] = N
     burden = 22.0
     per_head_month = salary * (1 + burden / 100.0) / 12.0
     heads = max(1, round(revenue * 0.316 / per_head_month))
+    ap_summary = ap.derive_ap_summary(bills, as_of) if bills else None
+    summary["ap"] = ap_summary
+    dpo_days = round(ap_summary["actual_dpo_days"]) if ap_summary and ap_summary["actual_dpo_days"] else 30
 
     assumptions = Assumptions(
         general=General(
@@ -540,8 +641,13 @@ def default_assumptions(rows: List[Dict[str, Any]], today: Optional[dt.date] = N
         ),
         costs=Costs(
             cogs_pct=40,
-            dpo_days=30,
-            opening_ap=round(revenue * 0.40 * 30 / 30),
+            dpo_days=dpo_days,
+            opening_ap=round(ap_summary["open_ap"]) if ap_summary else round(revenue * 0.40 * 30 / 30),
+        ),
+        ap=AP(
+            use_open_bills=bool(bills),
+            payment_lag_days=ap_summary["typical_lag_days"] if ap_summary else 0.0,
+            overdue_catchup_days=14,
         ),
         payroll=Payroll(
             headcount=heads,
@@ -564,14 +670,48 @@ def default_assumptions(rows: List[Dict[str, Any]], today: Optional[dt.date] = N
                 monthly_payment=_round_to(revenue * 0.026, 100),
             )
         ],
-        one_time=[
-            OneTimeItem(
-                name="Equipment purchase",
-                date=as_of + dt.timedelta(days=120),
-                amount=-_round_to(revenue * 0.17, 1000),
-                category="investing",
-            )
-        ],
+        one_time=[],
+        capex=Capex(
+            maintenance_pct_revenue=1.0,
+            maintenance_life_months=60,
+            existing_depreciation_monthly=_round_to(revenue * 0.012, 100),
+            growth_revenue_link=0.5,
+            items=[
+                CapexItem(
+                    name="Production equipment",
+                    category="equipment",
+                    date=as_of + dt.timedelta(days=120),
+                    amount=_round_to(revenue * 0.17, 1000),
+                    kind="growth",
+                    funding="loan",
+                    down_payment_pct=25,
+                    term_months=36,
+                    annual_rate_pct=8,
+                    useful_life_months=84,
+                ),
+                CapexItem(
+                    name="Equipment refresh",
+                    category="equipment",
+                    date=as_of + dt.timedelta(days=210),
+                    amount=_round_to(revenue * 0.05, 500),
+                    kind="maintenance",
+                    funding="cash",
+                    useful_life_months=48,
+                ),
+                CapexItem(
+                    name="ERP / software platform",
+                    category="software",
+                    date=as_of + dt.timedelta(days=270),
+                    amount=_round_to(revenue * 0.07, 1000),
+                    kind="growth",
+                    funding="lease",
+                    down_payment_pct=10,
+                    term_months=24,
+                    annual_rate_pct=7,
+                    useful_life_months=60,
+                ),
+            ],
+        ),
         collections=collections,
     )
     return {"assumptions": assumptions, "data_summary": summary}

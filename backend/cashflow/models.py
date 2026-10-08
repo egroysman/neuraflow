@@ -64,6 +64,48 @@ class Loan(BaseModel):
     balance: float = Field(0, ge=0, le=1e10)
     annual_rate_pct: float = Field(0, ge=0, le=60)
     monthly_payment: float = Field(0, ge=0, le=1e10)
+    floating: bool = Field(False, description="Rate floats with the macro rate overlay")
+
+
+class AP(BaseModel):
+    """How open vendor bills are turned into payments."""
+
+    use_open_bills: bool = Field(True, description="Pay the open vendor bills one by one (falls back to a lump if no bills)")
+    payment_lag_days: float = Field(0, ge=-30, le=120, description="Days after the due date you typically pay")
+    overdue_catchup_days: int = Field(14, ge=0, le=120, description="Bills already past due are paid within this many days")
+
+
+CapexCategory = Literal["equipment", "software", "facilities", "vehicles", "other"]
+
+
+class CapexItem(BaseModel):
+    name: str = Field(max_length=80)
+    category: CapexCategory = "equipment"
+    date: dt.date
+    amount: float = Field(0, ge=0, le=1e10, description="Full purchase price")
+    kind: Literal["maintenance", "growth"] = "growth"
+    funding: Literal["cash", "loan", "lease"] = "cash"
+    down_payment_pct: float = Field(20, ge=0, le=100, description="Paid in cash at purchase when financed")
+    term_months: int = Field(36, ge=1, le=120)
+    annual_rate_pct: float = Field(8, ge=0, le=60)
+    useful_life_months: int = Field(60, ge=3, le=360, description="Straight-line depreciation period")
+
+
+class Capex(BaseModel):
+    maintenance_pct_revenue: float = Field(0, ge=0, le=50, description="Recurring maintenance capex as % of revenue")
+    maintenance_life_months: int = Field(60, ge=6, le=360)
+    existing_depreciation_monthly: float = Field(0, ge=0, le=1e9, description="Depreciation on assets you already own")
+    growth_revenue_link: float = Field(0.5, ge=0, le=1, description="Share of a scenario revenue change that growth capex follows")
+    items: List[CapexItem] = Field(default_factory=list, max_length=100)
+
+
+class Macro(BaseModel):
+    """Macro overlay: layered on top of the other assumptions when ``apply`` is on."""
+
+    apply: bool = False
+    rate_change_pts: float = Field(0, ge=-10, le=10, description="Change in benchmark rates, applied to floating loans and new financed capex")
+    cost_inflation_pct: float = Field(0, ge=-10, le=30, description="Extra annual inflation on fixed opex and salaries")
+    demand_growth_pct: float = Field(0, ge=-30, le=30, description="Extra annual demand growth on new sales")
 
 
 class OneTimeItem(BaseModel):
@@ -110,6 +152,9 @@ class Assumptions(BaseModel):
     loans: List[Loan] = Field(default_factory=list, max_length=20)
     one_time: List[OneTimeItem] = Field(default_factory=list, max_length=100)
     collections: Collections = Field(default_factory=Collections)
+    ap: AP = Field(default_factory=AP)
+    capex: Capex = Field(default_factory=Capex)
+    macro: Macro = Field(default_factory=Macro)
 
 
 # --------------------------------------------------------------------------- #
@@ -125,6 +170,7 @@ class Adjustments(BaseModel):
     cogs_change_pct_pts: float = Field(0, ge=-30, le=30)
     opex_change_pct: float = Field(0, ge=-50, le=100)
     dpo_change_days: int = Field(0, ge=-60, le=120)
+    capex_change_pct: float = Field(0, ge=-100, le=200, description="Growth capex up/down")
 
     def plus(self, other: "Adjustments") -> "Adjustments":
         return Adjustments(

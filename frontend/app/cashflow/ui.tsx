@@ -179,3 +179,35 @@ export function GhostButton({
     </button>
   );
 }
+
+export function Stat({
+  label,
+  value,
+  sub,
+  tone = "default",
+}: {
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  tone?: "default" | "good" | "bad" | "warn";
+}) {
+  const color = { default: "text-[#e5e7eb]", good: "text-[#34d399]", bad: "text-[#f87171]", warn: "text-[#fbbf24]" }[tone];
+  return (
+    <div className="rounded-xl border border-[#1f2937] bg-[#111216] p-3.5">
+      <div className="text-xs font-medium text-[#9ca3af]">{label}</div>
+      <div className={`mt-1 text-xl font-bold tabular-nums ${color}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-[11px] leading-snug text-[#6b7280]">{sub}</div>}
+    </div>
+  );
+}
+
+export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "good" | "bad" | "warn" | "blue" }) {
+  const style = {
+    neutral: "bg-[#1f2937] text-[#9ca3af]",
+    good: "bg-[#052e22] text-[#34d399]",
+    bad: "bg-[#2a0f14] text-[#fca5a5]",
+    warn: "bg-[#2b1d07] text-[#fbbf24]",
+    blue: "bg-[#0c1a33] text-[#93c5fd]",
+  }[tone];
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${style}`}>{children}</span>;
+}
