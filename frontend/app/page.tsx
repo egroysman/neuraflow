@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 
 type HistoryItem = {
@@ -239,23 +238,6 @@ export default function Home() {
           <p style={{ color: "#9ca3af", marginTop: "6px" }}>
             Finance AI for Credit Risk + Cash Prediction
           </p>
-          <Link
-            href="/cashflow"
-            style={{
-              display: "inline-block",
-              marginTop: "10px",
-              padding: "8px 14px",
-              borderRadius: "10px",
-              border: "1px solid #2563eb",
-              backgroundColor: "#1d4ed8",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: "14px",
-              textDecoration: "none",
-            }}
-          >
-            Open Cash Flow Model →
-          </Link>
         </div>
 
         <div

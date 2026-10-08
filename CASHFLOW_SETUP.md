@@ -7,7 +7,7 @@ Backend (new endpoints: GET /cashflow/defaults, POST /cashflow/forecast, POST /c
 
 Frontend (new page at /cashflow, link added on the home page):
     cd frontend && npm install && npm run dev
-    Set NEXT_PUBLIC_API_BASE if the API is not http://localhost:8000.
+    The page uses the Railway API by default; set NEXT_PUBLIC_API_BASE=http://localhost:8000 for a local backend.
 
 Notes
 - Receivables assumptions are calibrated from your invoice data; payroll, opex, debt,

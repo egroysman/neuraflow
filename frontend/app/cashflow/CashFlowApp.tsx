@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AssumptionsEditor } from "./AssumptionsEditor";
 import { FlowChart, Legend, LineChart } from "./Charts";
@@ -159,10 +158,7 @@ export default function CashFlowApp() {
       <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
         <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <Link href="/" className="text-xs font-medium text-[#9ca3af] hover:text-[#e5e7eb]">
-              ← Command Console
-            </Link>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">Cash Flow Model</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Cash Flow Model</h1>
             <p className="mt-1 text-sm text-[#9ca3af]">
               Operating forecast built from your receivables, costs, payroll and debt.
             </p>
