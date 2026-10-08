@@ -64,6 +64,7 @@ export type CapexPlan = {
   maintenance_life_months: number;
   existing_depreciation_monthly: number;
   growth_revenue_link: number;
+  opening_ppe_net: number;
   items: CapexItem[];
 };
 
@@ -83,6 +84,20 @@ export type OneTimeItem = {
 
 export type Hire = { month: number; count: number };
 
+export type Employee = {
+  id: string;
+  department: string;
+  title: string;
+  pay_type: "salary" | "hourly";
+  annual_salary: number;
+  hourly_rate: number;
+  hours_per_week: number;
+  hire_date: string;
+  term_date: string | null;
+  bonus_pct: number;
+  benefits_monthly: number;
+};
+
 export type Assumptions = {
   general: {
     as_of: string;
@@ -99,6 +114,13 @@ export type Assumptions = {
   };
   costs: { cogs_pct: number; dpo_days: number; opening_ap: number };
   payroll: {
+    use_roster: boolean;
+    employees: Employee[];
+    pay_frequency: "biweekly" | "semimonthly" | "monthly";
+    next_pay_date: string | null;
+    employer_tax_pct: number;
+    raise_month: number;
+    bonus_month: number;
     headcount: number;
     avg_salary: number;
     burden_pct: number;
@@ -217,8 +239,126 @@ export type Forecast = {
   };
   ap: ApSummary;
   capex: CapexResult;
+  payroll: PayrollResult | null;
+  balance_sheet: BalanceSheet;
+  gl: GlCompare | null;
   macro: MacroEffect;
 };
+
+export type PayrollResult = {
+  employees: {
+    id: string;
+    department: string;
+    title: string;
+    pay_type: "salary" | "hourly";
+    annual_base: number;
+    hire_date: string;
+    term_date: string | null;
+    bonus_pct: number;
+    benefits_monthly: number;
+    status: "active" | "planned" | "terminated";
+  }[];
+  active_headcount: number;
+  annual_base_active: number;
+  monthly: number[];
+  headcount: number[];
+  by_department: Record<string, number[]>;
+  bonus: number[];
+  benefits: number[];
+  runs: { date: string; gross: number; employer_tax: number; total: number; employees: number }[];
+  pay_frequency: "biweekly" | "semimonthly" | "monthly";
+  total_cost: number;
+  total_cash: number;
+};
+
+export type BalanceRow = {
+  label: string;
+  cash: number;
+  receivables: number;
+  ppe_net: number;
+  total_assets: number;
+  payables: number;
+  accrued_payroll: number;
+  taxes_payable: number;
+  debt: number;
+  total_liabilities: number;
+  equity: number;
+  total_liabilities_equity: number;
+  check: number;
+  working_capital: number;
+  net_debt: number;
+  net_income?: number;
+};
+
+export type BalanceSheet = {
+  opening: BalanceRow;
+  months: BalanceRow[];
+  max_abs_check: number;
+  memo: { existing_ar_expected_uncollectible: number; new_sales_expected_uncollectible: number; ar_ending: number };
+};
+
+export type GlCompare = {
+  timeline: {
+    label: string;
+    actual_revenue: number | null;
+    actual_costs: number | null;
+    actual_pretax: number | null;
+    forecast_revenue: number | null;
+    forecast_costs: number | null;
+    forecast_pretax: number | null;
+  }[];
+  baseline_check: { label: string; actual_avg: number; forecast_first_month: number; difference: number; difference_pct: number | null }[];
+  variance: { label: string; approximate: boolean; lines: { label: string; actual: number; forecast: number; variance: number }[] }[];
+  baseline_window: string[];
+  history_months: number;
+};
+
+export type GlBaselines = {
+  window_months: string[];
+  monthly_revenue: number;
+  cogs_pct: number;
+  payroll_monthly: number;
+  opex_monthly: Record<string, number>;
+  depreciation_monthly: number;
+  starting_cash: number;
+  receivables: number;
+  payables: number;
+  ppe_net: number;
+  loan: { balance: number; monthly_payment: number; annual_rate_pct: number } | null;
+};
+
+export type GlOverview =
+  | { available: false }
+  | {
+      available?: undefined;
+      as_of: string;
+      first_date: string;
+      last_date: string;
+      entry_count: number;
+      line_count: number;
+      accounts: { account_id: string; name: string; type: string; subtype: string; model_line: string }[];
+      trial_balance: {
+        rows: { account_id: string; name: string; type: string; subtype: string; debit_balance: number; credit_balance: number; balance: number }[];
+        total_debit: number;
+        total_credit: number;
+        balanced: boolean;
+      };
+      monthly: {
+        month: string;
+        label: string;
+        partial: boolean;
+        revenue: number;
+        cogs: number;
+        payroll: number;
+        opex: number;
+        depreciation: number;
+        interest: number;
+        pretax_profit: number;
+      }[];
+      baselines: GlBaselines | null;
+      tie_out: { label: string; ledger: number; source: number; difference: number; ok: boolean }[];
+      recent_entries: { entry: string; date: string; account: string; debit: number; credit: number; memo: string; source: string }[];
+    };
 
 export type ApBucket = "current" | "d1_30" | "d31_60" | "d61_90" | "d90_plus";
 export type ApSummary = {
@@ -387,6 +527,7 @@ export type Defaults = {
       follow_days: number;
       snapshots: number;
     };
+    driven_by_gl?: string[];
     ap: {
       bill_count: number;
       vendor_count: number;
@@ -412,4 +553,4 @@ export const NO_ADJUSTMENTS: Adjustments = {
   capex_change_pct: 0,
 };
 
-export type TabId = "forecast" | "payables" | "capex" | "trends";
+export type TabId = "forecast" | "payroll" | "balance" | "gl" | "payables" | "capex" | "trends";

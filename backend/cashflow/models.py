@@ -42,7 +42,33 @@ class Hire(BaseModel):
     count: int = Field(ge=1, le=500)
 
 
+class Employee(BaseModel):
+    id: str = Field(max_length=40)
+    department: str = Field("General", max_length=60)
+    title: str = Field("", max_length=80)
+    pay_type: Literal["salary", "hourly"] = "salary"
+    annual_salary: float = Field(0, ge=0, le=5e7)
+    hourly_rate: float = Field(0, ge=0, le=5e4)
+    hours_per_week: float = Field(40, ge=0, le=100)
+    hire_date: dt.date
+    term_date: Optional[dt.date] = None
+    bonus_pct: float = Field(0, ge=0, le=500, description="Annual bonus as % of base pay")
+    benefits_monthly: float = Field(0, ge=0, le=1e6, description="Employer benefits cost per month")
+
+    def annual_base(self) -> float:
+        if self.pay_type == "hourly":
+            return self.hourly_rate * self.hours_per_week * 52.0
+        return self.annual_salary
+
+
 class Payroll(BaseModel):
+    use_roster: bool = Field(False, description="Build payroll from the employee roster and pay runs")
+    employees: List[Employee] = Field(default_factory=list, max_length=500)
+    pay_frequency: Literal["biweekly", "semimonthly", "monthly"] = "biweekly"
+    next_pay_date: Optional[dt.date] = Field(None, description="First pay run on or after the start date")
+    employer_tax_pct: float = Field(8.5, ge=0, le=60, description="Employer payroll taxes on wages and bonuses (roster mode)")
+    raise_month: int = Field(1, ge=1, le=12, description="Calendar month annual raises take effect")
+    bonus_month: int = Field(12, ge=1, le=12, description="Calendar month bonuses are paid")
     headcount: int = Field(0, ge=0, le=5000)
     avg_salary: float = Field(0, ge=0, le=5e6, description="Average annual salary per head")
     burden_pct: float = Field(20, ge=0, le=100, description="Taxes and benefits on top of salary")
@@ -95,6 +121,7 @@ class Capex(BaseModel):
     maintenance_pct_revenue: float = Field(0, ge=0, le=50, description="Recurring maintenance capex as % of revenue")
     maintenance_life_months: int = Field(60, ge=6, le=360)
     existing_depreciation_monthly: float = Field(0, ge=0, le=1e9, description="Depreciation on assets you already own")
+    opening_ppe_net: float = Field(0, ge=0, le=1e10, description="Net book value of property and equipment you own at the start date")
     growth_revenue_link: float = Field(0.5, ge=0, le=1, description="Share of a scenario revenue change that growth capex follows")
     items: List[CapexItem] = Field(default_factory=list, max_length=100)
 

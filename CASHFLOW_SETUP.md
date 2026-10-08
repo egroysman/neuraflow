@@ -23,3 +23,11 @@ Payables, capex and trends
 - Micro trends come from the invoice and bill history. Macro trends are fetched live from FRED
   (https://fred.stlouisfed.org, no API key) and cached for 6 hours; the backend host needs outbound HTTPS.
   If FRED can't be reached the page says so and shows no numbers. The macro overlay is off by default.
+
+## Payroll, general ledger and balance sheet
+
+- **Payroll roster** (`backend/neuraflow_payroll.csv`, columns EmployeeID, Department, Title, PayType, AnnualSalary, HourlyRate, HoursPerWeek, HireDate, TermDate, BonusPct, BenefitsMonthly). Roles and IDs only, no names. Cash goes out on pay runs (biweekly, semimonthly or monthly); the P&L accrues the same cost by month. Override the path with `DEFAULT_PAYROLL_CSV_PATH`.
+- **General ledger** (`backend/neuraflow_gl_accounts.csv` + `neuraflow_gl_journal.csv`; override with `DEFAULT_GL_ACCOUNTS_CSV_PATH` / `DEFAULT_GL_JOURNAL_CSV_PATH`). Each account has a `ModelLine` (revenue, cogs, payroll, `opex:<line>`, depreciation, interest, cash, ar, ap, ppe, debt, equity). The sample is generated from the invoices, bills and roster by `python generate_sample_gl.py` and ties to them exactly.
+- Forecast defaults (starting cash, revenue, cost of sales %, operating expense lines, term loan, depreciation, opening PP&E) come from the ledger's last three complete months and balances. "Apply ledger baselines" in the GL & Actuals tab re-applies them.
+- **Balance sheet** rolls forward from the same events and P&L, with equity as the balancing figure; the check row stays at zero.
+- Extra API: `GET /cashflow/gl`. The forecast response now includes `payroll`, `balance_sheet` and `gl`; the Excel export adds Payroll, Balance Sheet and GL vs Forecast sheets.

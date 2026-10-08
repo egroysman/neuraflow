@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from . import ap, ar, engine, export, macro, trends
+from . import ap, ar, engine, export, gl, macro, trends
 from .models import SCENARIO_LABELS, SCENARIO_PRESETS, ForecastRequest
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
@@ -39,7 +39,9 @@ def clean(value: Any) -> Any:
 @router.get("/defaults")
 def defaults():
     rows = ar.load_invoice_rows()
-    derived = engine.default_assumptions(rows, bill_rows=ap.load_bill_rows())
+    derived = engine.default_assumptions(
+        rows, bill_rows=ap.load_bill_rows(), payroll_rows=gl.load_payroll_rows(), gl_data=gl.load_gl()
+    )
     return clean(
         {
             "assumptions": derived["assumptions"],
@@ -68,16 +70,25 @@ def get_trends(as_of: dt.date | None = None):
     return clean(trends.build_trends(invoices, bills, when))
 
 
+@router.get("/gl")
+def get_gl(as_of: dt.date | None = None):
+    """Sample general ledger: trial balance, monthly actuals, baselines and tie-outs."""
+    invoices = ar.parse_invoices(ar.load_invoice_rows())
+    bills = ap.parse_bills(ap.load_bill_rows())
+    data = gl.overview(as_of or ar.snapshot_date(invoices), invoices, bills)
+    return clean(data) if data else {"available": False}
+
+
 @router.post("/forecast")
 def run_forecast(req: ForecastRequest):
     rows = ar.load_invoice_rows()
-    return clean(engine.forecast(rows, req, ap.load_bill_rows()))
+    return clean(engine.forecast(rows, req, ap.load_bill_rows(), gl.load_gl()))
 
 
 @router.post("/export")
 def export_forecast(req: ForecastRequest, format: Literal["xlsx", "csv"] = "xlsx"):
     rows = ar.load_invoice_rows()
-    result = engine.forecast(rows, req, ap.load_bill_rows())
+    result = engine.forecast(rows, req, ap.load_bill_rows(), gl.load_gl())
     stem = f"neuraflow_cashflow_{req.scenario}_{req.assumptions.general.as_of.isoformat()}"
     if format == "csv":
         body = export.build_csv(result).encode("utf-8")

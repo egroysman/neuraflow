@@ -113,10 +113,27 @@ function YAxis({ ticks, y, fmt = compact }: { ticks: number[]; y: (v: number) =>
 export type LineSeries = {
   name: string;
   color: string;
-  values: number[];
+  /** null leaves a gap (e.g. actuals that stop where the forecast starts). */
+  values: (number | null)[];
   dashed?: boolean;
   width?: number;
 };
+
+/** SVG path that lifts the pen at null values. */
+function linePath(values: (number | null)[], x: (i: number) => number, y: (v: number) => number): string {
+  let pen = false;
+  return values
+    .map((v, i) => {
+      if (v === null) {
+        pen = false;
+        return "";
+      }
+      const cmd = pen ? "L" : "M";
+      pen = true;
+      return `${cmd}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+    })
+    .join(" ");
+}
 
 export function LineChart({
   labels,
@@ -138,7 +155,10 @@ export function LineChart({
   includeZero?: boolean;
 }) {
   const hover = useHover(labels.length);
-  const all = series.flatMap((s) => s.values).concat(reference ? [reference.value] : [], includeZero ? [0] : []);
+  const all = series
+    .flatMap((s) => s.values)
+    .filter((v): v is number => v !== null)
+    .concat(reference ? [reference.value] : [], includeZero ? [0] : []);
   const ticks = niceTicks(Math.min(...all), Math.max(...all));
   const lo = ticks[0];
   const hi = ticks[ticks.length - 1];
@@ -160,7 +180,7 @@ export function LineChart({
         {series.map((s) => (
           <path
             key={s.name}
-            d={s.values.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}
+            d={linePath(s.values, x, y)}
             fill="none"
             stroke={s.color}
             strokeWidth={s.width ?? 2}
@@ -172,9 +192,10 @@ export function LineChart({
         {hover.index !== null && (
           <g>
             <line x1={x(hover.index)} x2={x(hover.index)} y1={M.top} y2={M.top + PLOT_H} stroke={COLORS.faint} strokeDasharray="3 3" />
-            {series.map((s) => (
-              <circle key={s.name} cx={x(hover.index!)} cy={y(s.values[hover.index!])} r={4} fill={s.color} stroke={COLORS.bg} strokeWidth={1.5} />
-            ))}
+            {series.map((s) => {
+              const v = s.values[hover.index!];
+              return v === null ? null : <circle key={s.name} cx={x(hover.index!)} cy={y(v)} r={4} fill={s.color} stroke={COLORS.bg} strokeWidth={1.5} />;
+            })}
           </g>
         )}
         <XLabels labels={labels} />
@@ -184,7 +205,10 @@ export function LineChart({
           index={hover.index}
           count={labels.length}
           title={labels[hover.index]}
-          rows={series.map((s) => ({ name: s.name, color: s.color, value: s.values[hover.index!] }))}
+          rows={series.flatMap((s) => {
+            const v = s.values[hover.index!];
+            return v === null ? [] : [{ name: s.name, color: s.color, value: v }];
+          })}
           fmt={valueFormat}
         />
       )}
