@@ -1,4 +1,4 @@
-import type { Adjustments, Assumptions, Defaults, Forecast, GlBaselines, GlOverview, MacroData, Scenario, Trends } from "./types";
+import type { Adjustments, Assumptions, Defaults, Forecast, GlBaselines, GlOverview, MacroData, Scenario, TabId, Trends } from "./types";
 
 // Backend base URL. Defaults to the deployed NeuraFlow API (same as the home page); set NEXT_PUBLIC_API_BASE=http://localhost:8000 for local development.
 export const API_BASE = (
@@ -178,16 +178,17 @@ export type AssistantReply = {
   follow_ups: string[];
 };
 
-export async function askArAssistant(
+export async function askAssistant(
   body: {
+    tab: TabId;
+    focus: string | null;
     message: string;
     history: { role: "user" | "assistant"; content: string }[];
-    customer_id: string | null;
     forecast: ForecastBody;
   },
   signal?: AbortSignal
 ): Promise<AssistantReply> {
-  const res = await fetch(`${API_BASE}/cashflow/ar-assistant`, {
+  const res = await fetch(`${API_BASE}/cashflow/assistant`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

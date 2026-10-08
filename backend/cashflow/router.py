@@ -110,20 +110,39 @@ def export_forecast(req: ForecastRequest, format: Literal["xlsx", "csv"] = "xlsx
 class AssistantRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1500)
     history: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
-    customer_id: str | None = Field(default=None, max_length=40)
+    customer_id: str | None = Field(default=None, max_length=40)  # legacy name for focus
+    focus: str | None = Field(default=None, max_length=60)  # customer, vendor, ...
+    tab: Literal["forecast", "receivables", "payroll", "payables", "capex", "balance", "gl", "trends"] = "receivables"
     forecast: ForecastRequest
 
 
-@router.post("/ar-assistant")
-def ar_assistant(req: AssistantRequest):
-    """Answer a receivables question from the same forecast the user is looking at."""
+@router.post("/assistant")
+def tab_assistant(req: AssistantRequest):
+    """Answer a question about one tab from the same forecast and loaded data the user is looking at."""
     rows = ar.load_invoice_rows()
-    result = engine.forecast(rows, req.forecast, ap.load_bill_rows(), gl.load_gl())
-    context = assistant.build_context(result, ar.parse_invoices(rows), req.customer_id)
+    bill_rows = ap.load_bill_rows()
+    ledger = gl.load_gl()
+    result = engine.forecast(rows, req.forecast, bill_rows, ledger)
+    invoices = ar.parse_invoices(rows)
+    bills = ap.parse_bills(bill_rows)
+    as_of = result["as_of"]
+    data: dict[str, Any] = {"invoices": invoices, "bills": bills, "focus": req.focus or req.customer_id}
+    if req.tab == "gl":
+        data["gl"] = gl.overview(as_of, invoices, bills)
+    if req.tab == "trends":
+        data["trends"] = trends.build_trends(invoices, bills, ar.snapshot_date(invoices) or as_of)
+    context = assistant.build_tab_context(req.tab, result, data)
     try:
-        answer = assistant.ask(context, req.message, req.history)
+        answer = assistant.ask(context, req.message, req.history, req.tab)
     except assistant.AssistantUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # the model call failed: report it without a stack trace
         raise HTTPException(status_code=502, detail=f"The assistant couldn't answer: {e}")
     return clean(answer)
+
+
+@router.post("/ar-assistant")
+def ar_assistant(req: AssistantRequest):
+    """Kept for older clients: the receivables assistant."""
+    return tab_assistant(req.model_copy(update={"tab": "receivables"}))
+
