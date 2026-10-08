@@ -7,7 +7,8 @@ import { BalanceSheetPanel } from "./BalanceSheetPanel";
 import { CapexPanel } from "./CapexPanel";
 import { GlPanel } from "./GlPanel";
 import { PayrollPanel } from "./PayrollPanel";
-import { KpiCards, ReceivablesPanel, ScenarioPanel, StatementTable } from "./Panels";
+import { KpiCards, ScenarioPanel, StatementTable } from "./Panels";
+import { ReceivablesTab } from "./ReceivablesTab";
 import { PayablesPanel } from "./PayablesPanel";
 import { TrendsPanel } from "./TrendsPanel";
 import { API_BASE, downloadExport, fetchDefaults, fetchForecast, money, shortDate } from "./lib";
@@ -63,6 +64,7 @@ function normalizeAssumptions(saved: Assumptions, defaults: Assumptions): Assump
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "forecast", label: "Forecast" },
+  { id: "receivables", label: "Receivables (AR)" },
   { id: "payroll", label: "Payroll" },
   { id: "balance", label: "Balance Sheet" },
   { id: "gl", label: "GL & Actuals" },
@@ -271,6 +273,8 @@ export default function CashFlowApp() {
                   onAdjustments={setAdjustments}
                   presets={defaults.scenarios}
                   comparison={forecast?.comparison}
+                  tab={tab}
+                  impact={forecast?.whatif_impact}
                 />
                 <AssumptionsEditor value={assumptions} onChange={setAssumptions} onReset={resetAssumptions} fromGl={defaults.data_summary.driven_by_gl ?? []} />
               </aside>
@@ -304,6 +308,11 @@ export default function CashFlowApp() {
                   ))}
                 </div>
 
+                {tab === "receivables" && forecast && (
+                  <div role="tabpanel" id="panel-receivables" aria-labelledby="tab-receivables">
+                    <ReceivablesTab forecast={forecast} adjustments={adjustments} calibration={defaults.data_summary.collections_calibration} />
+                  </div>
+                )}
                 {tab === "payroll" && forecast && (
                   <div role="tabpanel" id="panel-payroll" aria-labelledby="tab-payroll">
                     <PayrollPanel forecast={forecast} assumptions={assumptions} />
@@ -433,7 +442,6 @@ export default function CashFlowApp() {
                       <StatementTable periods={periods} categories={forecast.categories} minCash={assumptions.general.min_cash} />
                     </Card>
 
-                    <ReceivablesPanel ar={forecast.ar} calibration={defaults.data_summary.collections_calibration} />
                   </div>
                 )}
               </main>

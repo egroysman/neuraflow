@@ -16,10 +16,18 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Callable, Dict, List, Tuple
 
+import calendar
+
 from .models import Adjustments, Assumptions
 
 # (date, category key, amount, label)
 CapexEvent = Tuple[dt.date, str, float, str]
+
+
+def _add_months(d: dt.date, months: int) -> dt.date:
+    y, m = divmod(d.month - 1 + months, 12)
+    year, month = d.year + y, m + 1
+    return dt.date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
 def pmt(principal: float, annual_rate_pct: float, months: int) -> float:
@@ -78,13 +86,17 @@ def build(
 
     for item in a.capex.items:
         amount = item.amount * (scale if item.kind == "growth" else 1.0)
-        in_horizon = as_of <= item.date < end
+        when = item.date
+        if item.kind == "growth" and adj.capex_delay_months:
+            when = _add_months(item.date, adj.capex_delay_months)
+        in_horizon = as_of <= when < end
         row: Dict[str, Any] = {
             "name": item.name,
             "category": item.category,
             "kind": item.kind,
             "funding": item.funding,
-            "date": item.date,
+            "date": when,
+            "planned_date": item.date,
             "amount": amount,
             "planned_amount": item.amount,
             "in_horizon": in_horizon,
@@ -98,7 +110,7 @@ def build(
         items_out.append(row)
         if not in_horizon or amount <= 0:
             continue
-        k0 = month_index(item.date)
+        k0 = month_index(when)
         financed_share = 0.0 if item.funding == "cash" else 1.0 - item.down_payment_pct / 100.0
         down = amount * (1.0 - financed_share)
         financed = amount * financed_share
@@ -108,7 +120,7 @@ def build(
         row["cash_at_purchase"] = down
         row["financed"] = financed
         if down > 0:
-            events.append((item.date, "capex_investing", -down, f"{item.name} (capex)"))
+            events.append((when, "capex_investing", -down, f"{item.name} (capex)"))
         for j in range(k0, min(n, k0 + item.useful_life_months)):
             depreciation[j] += amount / item.useful_life_months
 
