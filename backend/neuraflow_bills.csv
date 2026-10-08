@@ -1,0 +1,101 @@
+BillID,VendorID,VendorName,Category,BillDate,DueDate,BillAmount,PaymentDate,Status,OpenAmount,TermsDays
+1,V100,Northwind Components,Cost of sales,2025-11-07,2025-12-22,20159.21,2026-01-01,Paid,0.0,45
+2,V100,Northwind Components,Cost of sales,2025-11-18,2026-01-02,17549.53,2026-01-09,Paid,0.0,45
+3,V101,Apex Materials,Cost of sales,2025-11-08,2025-12-08,16942.05,2025-12-04,Paid,0.0,30
+4,V101,Apex Materials,Cost of sales,2025-11-19,2025-12-19,13619.69,2025-12-11,Paid,0.0,30
+5,V110,Bright Accounting Group,Professional services,2025-11-08,2025-12-08,5539.71,2025-12-16,Paid,0.0,30
+6,V102,Harbor Freight & Logistics,Cost of sales,2025-11-09,2025-12-09,8896.71,2025-12-07,Paid,0.0,30
+7,V102,Harbor Freight & Logistics,Cost of sales,2025-11-20,2025-12-20,7514.12,2025-12-19,Paid,0.0,30
+8,V111,Evergreen Insurance,Insurance,2025-11-09,2026-01-08,8135.66,2026-01-11,Paid,0.0,60
+9,V103,Summit Contract Labor,Cost of sales,2025-11-10,2025-11-25,11072.94,2025-11-22,Paid,0.0,15
+10,V103,Summit Contract Labor,Cost of sales,2025-11-21,2025-12-06,10225.74,2025-12-04,Paid,0.0,15
+11,V112,Pioneer Marketing Co,Marketing,2025-11-10,2025-12-10,12498.31,2025-12-17,Paid,0.0,30
+12,V104,Lakeshore Packaging,Cost of sales,2025-11-11,2025-12-26,11266.35,2026-01-02,Paid,0.0,45
+13,V113,Delta Equipment Service,Maintenance,2025-11-11,2025-12-11,5013.29,2025-12-27,Paid,0.0,30
+14,V105,Prairie Utilities,Facilities,2025-11-12,2025-12-02,5467.88,2025-12-03,Paid,0.0,20
+15,V106,Cedar Property Mgmt,Facilities,2025-11-13,2025-12-13,10167.06,2025-12-09,Paid,0.0,30
+16,V106,Cedar Property Mgmt,Facilities,2025-11-24,2025-12-24,9817.3,2025-12-20,Paid,0.0,30
+17,V107,CloudStack Hosting,Software,2025-11-14,2025-12-14,10064.16,2025-12-17,Paid,0.0,30
+18,V108,Orbit SaaS Suite,Software,2025-11-15,2025-12-15,7638.08,2025-12-17,Paid,0.0,30
+19,V109,Meridian Legal LLP,Professional services,2025-11-16,2025-12-31,9888.59,2026-01-03,Paid,0.0,45
+20,V100,Northwind Components,Cost of sales,2025-12-07,2026-01-21,19770.0,2026-01-20,Paid,0.0,45
+21,V100,Northwind Components,Cost of sales,2025-12-18,2026-02-01,20567.67,2026-02-10,Paid,0.0,45
+22,V101,Apex Materials,Cost of sales,2025-12-08,2026-01-07,14655.22,2026-01-08,Paid,0.0,30
+23,V101,Apex Materials,Cost of sales,2025-12-19,2026-01-18,13583.14,2026-01-18,Paid,0.0,30
+24,V110,Bright Accounting Group,Professional services,2025-12-08,2026-01-07,5273.7,2026-01-14,Paid,0.0,30
+25,V102,Harbor Freight & Logistics,Cost of sales,2025-12-09,2026-01-08,9273.04,2026-01-04,Paid,0.0,30
+26,V102,Harbor Freight & Logistics,Cost of sales,2025-12-20,2026-01-19,8042.45,2026-01-19,Paid,0.0,30
+27,V111,Evergreen Insurance,Insurance,2025-12-09,2026-02-07,7411.01,2026-02-10,Paid,0.0,60
+28,V103,Summit Contract Labor,Cost of sales,2025-12-10,2025-12-25,12612.16,2025-12-24,Paid,0.0,15
+29,V103,Summit Contract Labor,Cost of sales,2025-12-21,2026-01-05,10877.71,2026-01-05,Paid,0.0,15
+30,V112,Pioneer Marketing Co,Marketing,2025-12-10,2026-01-09,10922.47,2026-01-14,Paid,0.0,30
+31,V104,Lakeshore Packaging,Cost of sales,2025-12-11,2026-01-25,14706.78,2026-02-01,Paid,0.0,45
+32,V113,Delta Equipment Service,Maintenance,2025-12-11,2026-01-10,4626.47,2026-01-18,Paid,0.0,30
+33,V105,Prairie Utilities,Facilities,2025-12-12,2026-01-01,6994.48,2026-01-01,Paid,0.0,20
+34,V106,Cedar Property Mgmt,Facilities,2025-12-13,2026-01-12,7745.34,2026-01-08,Paid,0.0,30
+35,V106,Cedar Property Mgmt,Facilities,2025-12-24,2026-01-23,8586.9,2026-01-20,Paid,0.0,30
+36,V107,CloudStack Hosting,Software,2025-12-14,2026-01-13,11379.37,2026-01-15,Paid,0.0,30
+37,V108,Orbit SaaS Suite,Software,2025-12-15,2026-01-14,8430.09,2026-01-14,Paid,0.0,30
+38,V109,Meridian Legal LLP,Professional services,2025-12-16,2026-01-30,8628.92,2026-03-08,Paid,0.0,45
+39,V100,Northwind Components,Cost of sales,2026-01-07,2026-02-21,21884.21,2026-02-23,Paid,0.0,45
+40,V100,Northwind Components,Cost of sales,2026-01-18,2026-03-04,17696.35,2026-03-11,Paid,0.0,45
+41,V101,Apex Materials,Cost of sales,2026-01-08,2026-02-07,16046.4,2026-02-07,Paid,0.0,30
+42,V101,Apex Materials,Cost of sales,2026-01-19,2026-02-18,17767.36,2026-02-23,Paid,0.0,30
+43,V110,Bright Accounting Group,Professional services,2026-01-08,2026-02-07,5498.09,2026-02-15,Paid,0.0,30
+44,V102,Harbor Freight & Logistics,Cost of sales,2026-01-09,2026-02-08,8908.76,2026-02-16,Paid,0.0,30
+45,V102,Harbor Freight & Logistics,Cost of sales,2026-01-20,2026-02-19,7700.0,2026-02-18,Paid,0.0,30
+46,V111,Evergreen Insurance,Insurance,2026-01-09,2026-03-10,8350.75,2026-03-10,Paid,0.0,60
+47,V103,Summit Contract Labor,Cost of sales,2026-01-10,2026-01-25,13336.63,2026-01-24,Paid,0.0,15
+48,V103,Summit Contract Labor,Cost of sales,2026-01-21,2026-02-05,11711.21,2026-02-05,Paid,0.0,15
+49,V112,Pioneer Marketing Co,Marketing,2026-01-10,2026-02-09,13201.66,2026-01-31,Paid,0.0,30
+50,V104,Lakeshore Packaging,Cost of sales,2026-01-11,2026-02-25,14175.72,2026-03-07,Paid,0.0,45
+51,V113,Delta Equipment Service,Maintenance,2026-01-11,2026-02-10,3671.29,2026-02-25,Paid,0.0,30
+52,V105,Prairie Utilities,Facilities,2026-01-12,2026-02-01,6368.64,2026-01-29,Paid,0.0,20
+53,V106,Cedar Property Mgmt,Facilities,2026-01-13,2026-02-12,8442.47,2026-02-09,Paid,0.0,30
+54,V106,Cedar Property Mgmt,Facilities,2026-01-24,2026-02-23,8941.25,2026-02-20,Paid,0.0,30
+55,V107,CloudStack Hosting,Software,2026-01-14,2026-02-13,9797.34,2026-02-19,Paid,0.0,30
+56,V108,Orbit SaaS Suite,Software,2026-01-15,2026-02-14,6933.2,2026-02-14,Paid,0.0,30
+57,V109,Meridian Legal LLP,Professional services,2026-01-16,2026-03-02,8933.7,2026-04-03,Paid,0.0,45
+58,V100,Northwind Components,Cost of sales,2026-02-07,2026-03-24,21608.15,2026-04-09,Paid,0.0,45
+59,V100,Northwind Components,Cost of sales,2026-02-18,2026-04-04,18021.25,2026-04-06,Paid,0.0,45
+60,V101,Apex Materials,Cost of sales,2026-02-08,2026-03-10,13956.77,2026-03-06,Paid,0.0,30
+61,V101,Apex Materials,Cost of sales,2026-02-19,2026-03-21,17075.24,2026-03-14,Paid,0.0,30
+62,V110,Bright Accounting Group,Professional services,2026-02-08,2026-03-10,5740.09,2026-03-13,Paid,0.0,30
+63,V102,Harbor Freight & Logistics,Cost of sales,2026-02-09,2026-03-11,7439.15,2026-03-09,Paid,0.0,30
+64,V102,Harbor Freight & Logistics,Cost of sales,2026-02-20,2026-03-22,10120.27,2026-03-21,Paid,0.0,30
+65,V111,Evergreen Insurance,Insurance,2026-02-09,2026-04-10,9005.83,,Open,9005.83,60
+66,V103,Summit Contract Labor,Cost of sales,2026-02-10,2026-02-25,10429.38,2026-02-24,Paid,0.0,15
+67,V103,Summit Contract Labor,Cost of sales,2026-02-21,2026-03-08,13676.92,2026-03-09,Paid,0.0,15
+68,V112,Pioneer Marketing Co,Marketing,2026-02-10,2026-03-12,11316.22,2026-03-20,Paid,0.0,30
+69,V104,Lakeshore Packaging,Cost of sales,2026-02-11,2026-03-28,10910.5,,Open,10910.5,45
+70,V113,Delta Equipment Service,Maintenance,2026-02-11,2026-03-13,3837.19,2026-03-14,Paid,0.0,30
+71,V105,Prairie Utilities,Facilities,2026-02-12,2026-03-04,6242.43,2026-03-03,Paid,0.0,20
+72,V106,Cedar Property Mgmt,Facilities,2026-02-13,2026-03-15,10241.13,2026-03-12,Paid,0.0,30
+73,V106,Cedar Property Mgmt,Facilities,2026-02-24,2026-03-26,8906.72,2026-03-23,Paid,0.0,30
+74,V107,CloudStack Hosting,Software,2026-02-14,2026-03-16,10690.6,2026-03-20,Paid,0.0,30
+75,V108,Orbit SaaS Suite,Software,2026-02-15,2026-03-17,6781.21,2026-03-15,Paid,0.0,30
+76,V109,Meridian Legal LLP,Professional services,2026-02-16,2026-04-02,9367.25,,Open,9367.25,45
+77,V100,Northwind Components,Cost of sales,2026-03-07,2026-04-21,18896.89,,Open,18896.89,45
+78,V100,Northwind Components,Cost of sales,2026-03-18,2026-05-02,17558.85,,Open,17558.85,45
+79,V101,Apex Materials,Cost of sales,2026-03-08,2026-04-07,14904.31,2026-04-05,Paid,0.0,30
+80,V101,Apex Materials,Cost of sales,2026-03-19,2026-04-18,14301.41,,Open,14301.41,30
+81,V110,Bright Accounting Group,Professional services,2026-03-08,2026-04-07,4891.2,,Open,4891.2,30
+82,V102,Harbor Freight & Logistics,Cost of sales,2026-03-09,2026-04-08,10051.9,2026-04-04,Paid,0.0,30
+83,V102,Harbor Freight & Logistics,Cost of sales,2026-03-20,2026-04-19,9919.7,,Open,9919.7,30
+84,V111,Evergreen Insurance,Insurance,2026-03-09,2026-05-08,8459.03,,Open,8459.03,60
+85,V103,Summit Contract Labor,Cost of sales,2026-03-10,2026-03-25,11048.38,2026-03-28,Paid,0.0,15
+86,V103,Summit Contract Labor,Cost of sales,2026-03-21,2026-04-05,12461.33,2026-04-08,Paid,0.0,15
+87,V112,Pioneer Marketing Co,Marketing,2026-03-10,2026-04-09,11266.99,,Open,11266.99,30
+88,V104,Lakeshore Packaging,Cost of sales,2026-03-11,2026-04-25,11410.44,,Open,11410.44,45
+89,V113,Delta Equipment Service,Maintenance,2026-03-11,2026-04-10,3792.54,,Open,3792.54,30
+90,V105,Prairie Utilities,Facilities,2026-03-12,2026-04-01,6225.53,2026-04-02,Paid,0.0,20
+91,V106,Cedar Property Mgmt,Facilities,2026-03-13,2026-04-12,9815.36,2026-04-08,Paid,0.0,30
+92,V106,Cedar Property Mgmt,Facilities,2026-03-24,2026-04-23,7942.3,,Open,7942.3,30
+93,V107,CloudStack Hosting,Software,2026-03-14,2026-04-13,9632.08,,Open,9632.08,30
+94,V108,Orbit SaaS Suite,Software,2026-03-15,2026-04-14,6897.22,,Open,6897.22,30
+95,V109,Meridian Legal LLP,Professional services,2026-03-16,2026-04-30,8032.37,,Open,8032.37,45
+96,V100,Northwind Components,Cost of sales,2026-04-07,2026-05-22,17896.48,,Open,17896.48,45
+97,V101,Apex Materials,Cost of sales,2026-04-08,2026-05-08,17897.5,,Open,17897.5,30
+98,V110,Bright Accounting Group,Professional services,2026-04-08,2026-05-08,4853.49,,Open,4853.49,30
+99,V102,Harbor Freight & Logistics,Cost of sales,2026-04-09,2026-05-09,10322.93,,Open,10322.93,30
+100,V111,Evergreen Insurance,Insurance,2026-04-09,2026-06-08,8927.55,,Open,8927.55,60

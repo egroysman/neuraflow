@@ -236,7 +236,8 @@ const SLIDERS: {
   { key: "growth_change_pct_pts", label: "Monthly growth", unit: "pts", min: -3, max: 3, step: 0.1, digits: 1, hint: "Added to the monthly growth assumption" },
   { key: "cogs_change_pct_pts", label: "Cost of sales", unit: "pts", min: -10, max: 10, step: 0.5, digits: 1, hint: "Percentage points of revenue" },
   { key: "opex_change_pct", label: "Operating expenses", unit: "%", min: -30, max: 30, step: 1, digits: 0, hint: "Scales every opex line" },
-  { key: "dpo_change_days", label: "Pay vendors slower (+) or faster (−)", unit: "days", min: -30, max: 30, step: 1, digits: 0, hint: "Shifts vendor payment timing" },
+  { key: "dpo_change_days", label: "Pay vendors slower (+) or faster (−)", unit: "days", min: -30, max: 30, step: 1, digits: 0, hint: "Shifts open bills and new vendor payments" },
+  { key: "capex_change_pct", label: "Growth capex", unit: "%", min: -100, max: 100, step: 5, digits: 0, hint: "Defer or accelerate growth capex (it also follows sales changes)" },
 ];
 
 const SCENARIOS: Scenario[] = ["base", "best", "worst"];
@@ -249,6 +250,7 @@ const PRESET_LABELS: Record<keyof Adjustments, string> = {
   cogs_change_pct_pts: "cost of sales",
   opex_change_pct: "opex",
   dpo_change_days: "vendor timing",
+  capex_change_pct: "growth capex",
 };
 
 export function ScenarioPanel({

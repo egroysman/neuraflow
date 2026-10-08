@@ -49,11 +49,13 @@ function Tooltip({
   count,
   title,
   rows,
+  fmt = money,
 }: {
   index: number;
   count: number;
   title: string;
   rows: { name: string; color: string; value: number }[];
+  fmt?: (v: number) => string;
 }) {
   const leftPct = (bandX(index, count) / W) * 100;
   const flip = index > count * 0.6;
@@ -70,7 +72,7 @@ function Tooltip({
             {row.name}
           </span>
           <span className="tabular-nums" style={{ color: row.value < 0 ? COLORS.red : COLORS.text }}>
-            {money(row.value)}
+            {fmt(row.value)}
           </span>
         </div>
       ))}
@@ -93,14 +95,14 @@ function XLabels({ labels }: { labels: string[] }) {
   );
 }
 
-function YAxis({ ticks, y }: { ticks: number[]; y: (v: number) => number }) {
+function YAxis({ ticks, y, fmt = compact }: { ticks: number[]; y: (v: number) => number; fmt?: (v: number) => string }) {
   return (
     <>
       {ticks.map((t) => (
         <g key={t}>
           <line x1={M.left} x2={W - M.right} y1={y(t)} y2={y(t)} stroke={t === 0 ? COLORS.borderStrong : COLORS.border} strokeWidth={t === 0 ? 1.2 : 1} />
           <text x={M.left - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill={COLORS.faint}>
-            {compact(t)}
+            {fmt(t)}
           </text>
         </g>
       ))}
@@ -121,14 +123,22 @@ export function LineChart({
   series,
   reference,
   ariaLabel,
+  axisFormat,
+  valueFormat,
+  includeZero = true,
 }: {
   labels: string[];
   series: LineSeries[];
   reference?: { value: number; label: string };
   ariaLabel: string;
+  /** Y-axis tick label, default compact dollars. */
+  axisFormat?: (v: number) => string;
+  /** Tooltip value, default whole dollars. */
+  valueFormat?: (v: number) => string;
+  includeZero?: boolean;
 }) {
   const hover = useHover(labels.length);
-  const all = series.flatMap((s) => s.values).concat(reference ? [reference.value] : [], [0]);
+  const all = series.flatMap((s) => s.values).concat(reference ? [reference.value] : [], includeZero ? [0] : []);
   const ticks = niceTicks(Math.min(...all), Math.max(...all));
   const lo = ticks[0];
   const hi = ticks[ticks.length - 1];
@@ -138,7 +148,7 @@ export function LineChart({
   return (
     <div className="relative" {...hover.props}>
       <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label={ariaLabel}>
-        <YAxis ticks={ticks} y={y} />
+        <YAxis ticks={ticks} y={y} fmt={axisFormat} />
         {reference && (
           <g>
             <line x1={M.left} x2={W - M.right} y1={y(reference.value)} y2={y(reference.value)} stroke={COLORS.amber} strokeDasharray="5 4" strokeWidth={1.4} />
@@ -175,6 +185,7 @@ export function LineChart({
           count={labels.length}
           title={labels[hover.index]}
           rows={series.map((s) => ({ name: s.name, color: s.color, value: s.values[hover.index!] }))}
+          fmt={valueFormat}
         />
       )}
     </div>
@@ -260,5 +271,79 @@ export function Legend({ items }: { items: { name: string; color: string; dashed
         </span>
       ))}
     </div>
+  );
+}
+
+export type BarSeries = { name: string; color: string; values: number[] };
+
+/** Stacked columns for non-negative amounts (one column per period). */
+export function StackedBars({
+  labels,
+  series,
+  ariaLabel,
+}: {
+  labels: string[];
+  series: BarSeries[];
+  ariaLabel: string;
+}) {
+  const hover = useHover(labels.length);
+  const totals = labels.map((_, i) => series.reduce((sum, s) => sum + (s.values[i] || 0), 0));
+  const ticks = niceTicks(0, Math.max(...totals, 1));
+  const lo = ticks[0];
+  const hi = ticks[ticks.length - 1];
+  const y = (v: number) => M.top + PLOT_H - ((v - lo) / (hi - lo || 1)) * PLOT_H;
+  const band = PLOT_W / Math.max(labels.length, 1);
+  const barW = Math.max(6, Math.min(40, band * 0.62));
+  const x = (i: number) => bandX(i, labels.length);
+
+  return (
+    <div className="relative" {...hover.props}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label={ariaLabel}>
+        <YAxis ticks={ticks} y={y} />
+        {labels.map((_, i) => {
+          let base = 0;
+          return (
+            <g key={i} opacity={hover.index === null || hover.index === i ? 1 : 0.5}>
+              {series.map((s) => {
+                const v = s.values[i] || 0;
+                const top = y(base + v);
+                const rect = <rect key={s.name} x={x(i) - barW / 2} y={top} width={barW} height={Math.max(0, y(base) - top)} fill={s.color} />;
+                base += v;
+                return rect;
+              })}
+            </g>
+          );
+        })}
+        <XLabels labels={labels} />
+      </svg>
+      {hover.index !== null && (
+        <Tooltip
+          index={hover.index}
+          count={labels.length}
+          title={labels[hover.index]}
+          rows={[
+            ...series.map((s) => ({ name: s.name, color: s.color, value: s.values[hover.index!] || 0 })),
+            ...(series.length > 1 ? [{ name: "Total", color: COLORS.muted, value: totals[hover.index] }] : []),
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Tiny inline trend line for cards. */
+export function Sparkline({ values, color = COLORS.blue, label }: { values: number[]; color?: string; label: string }) {
+  if (values.length < 2) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const w = 120;
+  const h = 32;
+  const pts = values
+    .map((v, i) => `${((i / (values.length - 1)) * w).toFixed(1)},${(h - 3 - ((v - min) / (max - min || 1)) * (h - 6)).toFixed(1)}`)
+    .join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-8 w-full" role="img" aria-label={label} preserveAspectRatio="none">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }

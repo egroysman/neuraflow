@@ -495,7 +495,7 @@ def test_api_xlsx_export_has_expected_sheets(client):
     r = client.post("/cashflow/export?format=xlsx", json={"assumptions": a, "scenario": "best"})
     assert r.status_code == 200
     wb = load_workbook(io.BytesIO(r.content))
-    assert wb.sheetnames == ["Summary", "Monthly", "13-Week", "P&L", "Scenarios", "Receivables", "Assumptions"]
+    assert wb.sheetnames == ["Summary", "Monthly", "13-Week", "P&L", "Scenarios", "Receivables", "Payables", "Capex", "Assumptions"]
     assert wb["Summary"]["B3"].value == "Best case"
 
 
@@ -526,4 +526,4 @@ def test_excel_formulas_recalculate_to_the_engine_numbers(real_rows, defaults, t
             assert ws.cell(row=labels["ENDING CASH"], column=col).value == pytest.approx(period["end_cash"], abs=1.0 + 0.5 * (i + 1))
     pnl = wb["P&L"]
     first_pretax = result["pnl"][0]["pretax_profit"]
-    assert pnl.cell(row=10, column=2).value == pytest.approx(first_pretax, abs=0.5)
+    assert pnl.cell(row=11, column=2).value == pytest.approx(first_pretax, abs=0.5)

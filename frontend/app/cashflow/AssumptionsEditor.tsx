@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Card, Disclosure, Field, GhostButton, NumInput, inputClass } from "./ui";
-import type { Assumptions, Bucket, OneTimeItem, OpexLine } from "./types";
+import type { Assumptions, Bucket, CapexItem, OneTimeItem, OpexLine } from "./types";
 
 const BUCKET_LABELS: Record<Bucket, string> = {
   current: "Not yet due",
@@ -133,6 +133,29 @@ export function AssumptionsEditor({
           </Field>
         </Disclosure>
 
+        <Disclosure title="Payables (open vendor bills)" badge={value.ap.use_open_bills ? "bill by bill" : "lump sum"}>
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-[#d1d5db]">
+            <input
+              type="checkbox"
+              checked={value.ap.use_open_bills}
+              onChange={(e) => edit((d) => void (d.ap.use_open_bills = e.target.checked))}
+              className="mt-0.5 h-4 w-4 accent-[#60a5fa]"
+            />
+            <span>
+              Pay each open vendor bill on its due date
+              <span className="block text-[11px] text-[#6b7280]">Off: pay the single lump above instead.</span>
+            </span>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Typical payment lag" hint="Days after the due date you usually pay.">
+              <NumInput value={value.ap.payment_lag_days} min={-30} max={120} suffix="days" onChange={(n) => edit((d) => void (d.ap.payment_lag_days = n))} />
+            </Field>
+            <Field label="Clear overdue bills in" hint="Bills already late are paid within this.">
+              <NumInput value={value.ap.overdue_catchup_days} min={0} max={120} suffix="days" onChange={(n) => edit((d) => void (d.ap.overdue_catchup_days = Math.round(n)))} />
+            </Field>
+          </div>
+        </Disclosure>
+
         <Disclosure title="Payroll & hiring" badge={`${payroll.headcount} people`}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Headcount">
@@ -218,9 +241,107 @@ export function AssumptionsEditor({
                   <NumInput ariaLabel={`Loan ${i + 1} payment`} value={l.monthly_payment} min={0} prefix="$" onChange={(n) => edit((d) => void (d.loans[i].monthly_payment = n))} />
                 </Mini>
               </div>
+              <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-[#9ca3af]">
+                <input
+                  type="checkbox"
+                  aria-label={`Loan ${i + 1} floating rate`}
+                  checked={l.floating}
+                  onChange={(e) => edit((d) => void (d.loans[i].floating = e.target.checked))}
+                  className="h-3.5 w-3.5 accent-[#60a5fa]"
+                />
+                Floating rate (moves with the macro overlay)
+              </label>
             </Row>
           ))}
-          <GhostButton onClick={() => edit((d) => void d.loans.push({ name: "New loan", balance: 0, annual_rate_pct: 0, monthly_payment: 0 }))}>+ Add loan</GhostButton>
+          <GhostButton onClick={() => edit((d) => void d.loans.push({ name: "New loan", balance: 0, annual_rate_pct: 0, monthly_payment: 0, floating: false }))}>+ Add loan</GhostButton>
+        </Disclosure>
+
+        <Disclosure title="Capex plan" badge={`${value.capex.items.length} items`}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Maintenance capex" hint="Recurring, as % of revenue.">
+              <NumInput value={value.capex.maintenance_pct_revenue} min={0} max={50} suffix="% rev" onChange={(n) => edit((d) => void (d.capex.maintenance_pct_revenue = n))} />
+            </Field>
+            <Field label="Maintenance life" hint="Depreciation period.">
+              <NumInput value={value.capex.maintenance_life_months} min={6} max={360} suffix="mo" onChange={(n) => edit((d) => void (d.capex.maintenance_life_months = Math.round(n)))} />
+            </Field>
+            <Field label="Existing depreciation" hint="Per month, assets you own.">
+              <NumInput value={value.capex.existing_depreciation_monthly} min={0} prefix="$" onChange={(n) => edit((d) => void (d.capex.existing_depreciation_monthly = n))} />
+            </Field>
+            <Field label="Growth capex follows sales" hint="Share of a scenario sales change it copies.">
+              <NumInput value={Math.round(value.capex.growth_revenue_link * 100)} min={0} max={100} suffix="%" onChange={(n) => edit((d) => void (d.capex.growth_revenue_link = n / 100))} />
+            </Field>
+          </div>
+          {value.capex.items.map((it, i) => (
+            <Row key={i} name={it.name || `capex item ${i + 1}`} onRemove={() => edit((d) => void d.capex.items.splice(i, 1))}>
+              <input aria-label={`Capex ${i + 1} name`} value={it.name} maxLength={80} onChange={(e) => edit((d) => void (d.capex.items[i].name = e.target.value))} className={inputClass} placeholder="Name" />
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Mini label="Date">
+                  <input aria-label={`Capex ${i + 1} date`} type="date" value={it.date} onChange={(e) => e.target.value && edit((d) => void (d.capex.items[i].date = e.target.value))} className={inputClass} />
+                </Mini>
+                <Mini label="Price">
+                  <NumInput ariaLabel={`Capex ${i + 1} amount`} value={it.amount} min={0} prefix="$" onChange={(n) => edit((d) => void (d.capex.items[i].amount = n))} />
+                </Mini>
+                <Mini label="Type">
+                  <select aria-label={`Capex ${i + 1} type`} value={it.kind} onChange={(e) => edit((d) => void (d.capex.items[i].kind = e.target.value as CapexItem["kind"]))} className={inputClass}>
+                    <option value="growth">Growth</option>
+                    <option value="maintenance">Maintenance</option>
+                  </select>
+                </Mini>
+                <Mini label="Category">
+                  <select aria-label={`Capex ${i + 1} category`} value={it.category} onChange={(e) => edit((d) => void (d.capex.items[i].category = e.target.value as CapexItem["category"]))} className={inputClass}>
+                    <option value="equipment">Equipment</option>
+                    <option value="software">Software</option>
+                    <option value="facilities">Facilities</option>
+                    <option value="vehicles">Vehicles</option>
+                    <option value="other">Other</option>
+                  </select>
+                </Mini>
+                <Mini label="Funding">
+                  <select aria-label={`Capex ${i + 1} funding`} value={it.funding} onChange={(e) => edit((d) => void (d.capex.items[i].funding = e.target.value as CapexItem["funding"]))} className={inputClass}>
+                    <option value="cash">Pay cash</option>
+                    <option value="loan">Loan</option>
+                    <option value="lease">Lease</option>
+                  </select>
+                </Mini>
+                <Mini label="Useful life (months)">
+                  <NumInput ariaLabel={`Capex ${i + 1} useful life`} value={it.useful_life_months} min={3} max={360} onChange={(n) => edit((d) => void (d.capex.items[i].useful_life_months = Math.round(n)))} />
+                </Mini>
+              </div>
+              {it.funding !== "cash" && (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <Mini label="Down payment">
+                    <NumInput ariaLabel={`Capex ${i + 1} down payment`} value={it.down_payment_pct} min={0} max={100} suffix="%" onChange={(n) => edit((d) => void (d.capex.items[i].down_payment_pct = n))} />
+                  </Mini>
+                  <Mini label="Term (mo)">
+                    <NumInput ariaLabel={`Capex ${i + 1} term`} value={it.term_months} min={1} max={120} onChange={(n) => edit((d) => void (d.capex.items[i].term_months = Math.round(n)))} />
+                  </Mini>
+                  <Mini label="Rate / yr">
+                    <NumInput ariaLabel={`Capex ${i + 1} rate`} value={it.annual_rate_pct} min={0} max={60} suffix="%" onChange={(n) => edit((d) => void (d.capex.items[i].annual_rate_pct = n))} />
+                  </Mini>
+                </div>
+              )}
+            </Row>
+          ))}
+          <GhostButton
+            onClick={() =>
+              edit((d) =>
+                void d.capex.items.push({
+                  name: "New purchase",
+                  category: "equipment",
+                  date: d.general.as_of,
+                  amount: 0,
+                  kind: "growth",
+                  funding: "cash",
+                  down_payment_pct: 20,
+                  term_months: 36,
+                  annual_rate_pct: 8,
+                  useful_life_months: 60,
+                })
+              )
+            }
+          >
+            + Add capex item
+          </GhostButton>
         </Disclosure>
 
         <Disclosure title="One-time items" badge={`${value.one_time.length}`}>

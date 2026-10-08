@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { AssumptionsEditor } from "./AssumptionsEditor";
 import { FlowChart, Legend, LineChart } from "./Charts";
+import { CapexPanel } from "./CapexPanel";
 import { KpiCards, ReceivablesPanel, ScenarioPanel, StatementTable } from "./Panels";
+import { PayablesPanel } from "./PayablesPanel";
+import { TrendsPanel } from "./TrendsPanel";
 import { API_BASE, downloadExport, fetchDefaults, fetchForecast, money, shortDate } from "./lib";
 import { COLORS, Card } from "./ui";
 import {
@@ -13,6 +16,7 @@ import {
   type Defaults,
   type Forecast,
   type Scenario,
+  type TabId,
   type View,
 } from "./types";
 
@@ -28,6 +32,24 @@ function looksLikeAssumptions(value: unknown): value is Assumptions {
   return !!v && !!v.general && !!v.sales && !!v.costs && !!v.payroll && !!v.collections && Array.isArray(v.opex) && Array.isArray(v.loans) && Array.isArray(v.one_time);
 }
 
+/** Assumptions saved before payables, capex and macro existed lack those sections: fill them in. */
+function normalizeAssumptions(saved: Assumptions, defaults: Assumptions): Assumptions {
+  const next = structuredClone(saved);
+  if (!next.ap) next.ap = structuredClone(defaults.ap);
+  // Older saves kept the equipment purchase as a one-time item, so start the capex plan empty.
+  if (!next.capex) next.capex = { ...structuredClone(defaults.capex), items: [] };
+  if (!next.macro) next.macro = structuredClone(defaults.macro);
+  next.loans = next.loans.map((l) => ({ ...l, floating: l.floating ?? false }));
+  return next;
+}
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "forecast", label: "Forecast" },
+  { id: "payables", label: "Payables (AP)" },
+  { id: "capex", label: "Capex" },
+  { id: "trends", label: "Trends" },
+];
+
 const message = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
 
 export default function CashFlowApp() {
@@ -36,6 +58,7 @@ export default function CashFlowApp() {
   const [scenario, setScenario] = useState<Scenario>("base");
   const [adjustments, setAdjustments] = useState<Adjustments>(NO_ADJUSTMENTS);
   const [view, setView] = useState<View>("monthly");
+  const [tab, setTab] = useState<TabId>("forecast");
   const [forecast, setForecast] = useState<Forecast | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [forecastError, setForecastError] = useState<string | null>(null);
@@ -55,7 +78,7 @@ export default function CashFlowApp() {
           const saved = window.localStorage.getItem(STORAGE_KEY);
           if (saved) {
             const parsed: unknown = JSON.parse(saved);
-            if (looksLikeAssumptions(parsed)) initial = parsed;
+            if (looksLikeAssumptions(parsed)) initial = normalizeAssumptions(parsed, data.assumptions);
           }
         } catch {
           /* storage unavailable or corrupt: use defaults */
@@ -241,8 +264,57 @@ export default function CashFlowApp() {
 
                 {!forecast && !forecastError && <p className="text-sm text-[#9ca3af]" role="status">Running the model…</p>}
 
-                {forecast && kpis && (
-                  <>
+                <div role="tablist" aria-label="Cash flow sections" className="flex flex-wrap gap-1 rounded-xl bg-[#111216] p-1">
+                  {TABS.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      role="tab"
+                      id={`tab-${t.id}`}
+                      aria-selected={tab === t.id}
+                      aria-controls={`panel-${t.id}`}
+                      onClick={() => setTab(t.id)}
+                      className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors sm:flex-none ${
+                        tab === t.id ? "bg-[#1d4ed8] text-white" : "text-[#9ca3af] hover:bg-[#1f2937] hover:text-[#e5e7eb]"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {tab === "payables" && forecast && (
+                  <div role="tabpanel" id="panel-payables" aria-labelledby="tab-payables">
+                    <PayablesPanel ap={forecast.ap} assumptions={assumptions} />
+                  </div>
+                )}
+                {tab === "capex" && forecast && (
+                  <div role="tabpanel" id="panel-capex" aria-labelledby="tab-capex">
+                    <CapexPanel capex={forecast.capex} horizon={horizon} />
+                  </div>
+                )}
+                {tab === "trends" && (
+                  <div role="tabpanel" id="panel-trends" aria-labelledby="tab-trends">
+                    <TrendsPanel
+                      assumptions={assumptions}
+                      macroEffect={forecast?.macro}
+                      onMacro={(macro) => setAssumptions({ ...assumptions, macro })}
+                      onApplyMicro={(patch) =>
+                        setAssumptions({
+                          ...assumptions,
+                          sales: {
+                            ...assumptions.sales,
+                            ...(patch.growth !== undefined ? { growth_pct_monthly: patch.growth } : {}),
+                            ...(patch.dso !== undefined ? { dso_days: patch.dso } : {}),
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                )}
+
+                {forecast && kpis && tab === "forecast" && (
+                  <div role="tabpanel" id="panel-forecast" aria-labelledby="tab-forecast" className="space-y-5">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-sm text-[#9ca3af]">
                         {forecast.scenario_label} · {shortDate(forecast.as_of)} → {shortDate(view === "monthly" ? forecast.horizon_end : forecast.weekly[forecast.weekly.length - 1].end)}
@@ -326,7 +398,7 @@ export default function CashFlowApp() {
                     </Card>
 
                     <ReceivablesPanel ar={forecast.ar} calibration={defaults.data_summary.collections_calibration} />
-                  </>
+                  </div>
                 )}
               </main>
             </div>

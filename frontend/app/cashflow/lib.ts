@@ -1,4 +1,4 @@
-import type { Adjustments, Assumptions, Defaults, Forecast, Scenario } from "./types";
+import type { Adjustments, Assumptions, Defaults, Forecast, MacroData, Scenario, Trends } from "./types";
 
 // Backend base URL. Defaults to the deployed NeuraFlow API (same as the home page); set NEXT_PUBLIC_API_BASE=http://localhost:8000 for local development.
 export const API_BASE = (
@@ -70,6 +70,32 @@ export async function fetchDefaults(signal?: AbortSignal): Promise<Defaults> {
   const res = await fetch(`${API_BASE}/cashflow/defaults`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
+}
+
+export async function fetchTrends(signal?: AbortSignal): Promise<Trends> {
+  const res = await fetch(`${API_BASE}/cashflow/trends`, { signal });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+export async function fetchMacro(refresh = false, signal?: AbortSignal): Promise<MacroData> {
+  const res = await fetch(`${API_BASE}/cashflow/macro${refresh ? "?refresh=true" : ""}`, { signal });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+/** Format a metric by its unit: $ (compact), days, % / pts. */
+export function fmtUnit(value: number, unit: string): string {
+  if (unit === "$") return compact(value);
+  if (unit === "days") return `${value.toFixed(0)} d`;
+  return `${value.toFixed(1)}%`;
+}
+
+export const pct = (v: number, digits = 1) => `${v.toFixed(digits)}%`;
+
+/** "2026-03" -> "Mar 2026". */
+export function monthLabel(ym: string): string {
+  return parseDate(`${ym}-01`).toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
 export type ForecastBody = {

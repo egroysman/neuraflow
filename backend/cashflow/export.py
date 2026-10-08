@@ -132,6 +132,7 @@ def _pnl(ws, pnl: List[Dict[str, Any]]) -> None:
         ("Payroll & benefits", "payroll"),
         ("Operating expenses", "opex"),
         ("Interest expense", "interest"),
+        ("Depreciation (non-cash)", "depreciation"),
         ("Pre-tax profit", None),
     ]
     for r, (label, key) in enumerate(lines, start=4):
@@ -143,7 +144,7 @@ def _pnl(ws, pnl: List[Dict[str, Any]]) -> None:
             elif label == "Gross profit":
                 value = f"={col}4-{col}5"
             else:
-                value = f"={col}6-{col}7-{col}8-{col}9"
+                value = f"={col}6-{col}7-{col}8-{col}9-{col}10"
             cell = ws.cell(row=r, column=2 + i, value=value)
             cell.number_format = MONEY
             if not key:
@@ -161,7 +162,7 @@ def _assumptions(ws, a: Assumptions) -> None:
     ws["A1"].font = Font(bold=True, size=14)
     data = a.model_dump(mode="json")
     row = 3
-    for section in ("general", "sales", "costs"):
+    for section in ("general", "sales", "costs", "ap", "macro"):
         ws.cell(row=row, column=1, value=section.title()).font = BOLD
         row += 1
         for key, value in data[section].items():
@@ -259,6 +260,68 @@ def _ar(ws, ar_data: Dict[str, Any]) -> None:
     _widths(ws, 36, 20, 7)
 
 
+def _ap(ws, ap_data: Dict[str, Any]) -> None:
+    ws["A1"] = "Payables outlook"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A3"], ws["B3"] = "Open vendor bills", round(ap_data["open_total"], 2)
+    ws["A4"], ws["B4"] = "Of which past due", round(ap_data["overdue_total"], 2)
+    ws["A5"], ws["B5"] = "Actual days payable (bill to payment)", ap_data["actual_dpo_days"]
+    ws["B3"].number_format = ws["B4"].number_format = MONEY
+    _header(ws, 7, ["Aging bucket", "Open amount", "Bills"])
+    row = 8
+    for item in ap_data["aging"]:
+        ws.cell(row=row, column=1, value=item["label"])
+        ws.cell(row=row, column=2, value=round(item["open_amount"], 2)).number_format = MONEY
+        ws.cell(row=row, column=3, value=item["bills"])
+        row += 1
+    row += 1
+    _header(ws, row, ["Vendor", "Category", "Open amount", "Share %", "Avg days to pay", "Avg days vs due", "Oldest days past due"])
+    row += 1
+    for v in ap_data["vendors"]:
+        values = [v["vendor_name"], v["category"], round(v["open_amount"], 2), v["share_pct"],
+                  v["avg_days_to_pay"], v["avg_days_vs_due"], v["oldest_days_past_due"]]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col, value=value)
+            if col == 3:
+                cell.number_format = MONEY
+        row += 1
+    _widths(ws, 34, 20, 7)
+
+
+def _capex(ws, capex_data: Dict[str, Any]) -> None:
+    ws["A1"] = "Capital expenditure plan"
+    ws["A1"].font = Font(bold=True, size=14)
+    t = capex_data["totals"]
+    for r, (label, key) in enumerate(
+        [("Cash capex in horizon", "cash_capex"), ("  Maintenance", "maintenance"), ("  Growth", "growth"),
+         ("Financed purchases", "financed_amount"), ("Financing payments in horizon", "financed_payments"),
+         ("Depreciation in horizon (non-cash)", "depreciation")], start=3):
+        ws.cell(row=r, column=1, value=label)
+        ws.cell(row=r, column=2, value=round(t[key], 2)).number_format = MONEY
+    _header(ws, 10, ["Item", "Category", "Kind", "Funding", "Date", "Amount", "Cash at purchase", "Financed", "Monthly payment", "Depreciation / month"])
+    row = 11
+    for it in capex_data["items"]:
+        values = [it["name"], it["category"], it["kind"], it["funding"], it["date"], round(it["amount"], 2),
+                  round(it["cash_at_purchase"], 2), round(it["financed"], 2),
+                  round(it["monthly_payment"], 2), round(it["depreciation_monthly"], 2)]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col, value=value)
+            if col >= 6:
+                cell.number_format = MONEY
+        row += 1
+    row += 1
+    _header(ws, row, ["Month", "Maintenance", "Growth", "Financing payments", "Interest", "Depreciation", "Net asset additions (cum.)"])
+    row += 1
+    for m in capex_data["monthly"]:
+        values = [m["label"], m["maintenance"], m["growth"], m["financed_payments"], m["interest"], m["depreciation"], m["net_additions_cum"]]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col, value=round(value, 2) if col > 1 else value)
+            if col > 1:
+                cell.number_format = MONEY
+        row += 1
+    _widths(ws, 30, 16, 10)
+
+
 def _scenarios(ws, result: Dict[str, Any]) -> None:
     ws["A1"] = "Scenario comparison: ending cash by month"
     ws["A1"].font = Font(bold=True, size=14)
@@ -331,6 +394,8 @@ def build_xlsx(result: Dict[str, Any], assumptions: Assumptions) -> bytes:
     _pnl(wb.create_sheet("P&L"), result["pnl"])
     _scenarios(wb.create_sheet("Scenarios"), result)
     _ar(wb.create_sheet("Receivables"), result["ar"])
+    _ap(wb.create_sheet("Payables"), result["ap"])
+    _capex(wb.create_sheet("Capex"), result["capex"])
     _assumptions(wb.create_sheet("Assumptions"), assumptions)
     buffer = io.BytesIO()
     wb.save(buffer)

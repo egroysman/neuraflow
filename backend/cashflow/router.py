@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from . import ar, engine, export
+from . import ap, ar, engine, export, macro, trends
 from .models import SCENARIO_LABELS, SCENARIO_PRESETS, ForecastRequest
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
@@ -16,7 +16,8 @@ router = APIRouter(prefix="/cashflow", tags=["cashflow"])
 PLACEHOLDER_NOTE = (
     "Start date, revenue run-rate and days-to-pay come from your invoice data. "
     "Starting cash, payroll, operating expenses, debt and one-time items are "
-    "illustrative placeholders scaled to that revenue - replace them with your real numbers."
+    "illustrative placeholders scaled to that revenue - replace them with your real numbers. "
+    "Vendor bills come from the bundled sample payables dataset."
 )
 
 
@@ -38,7 +39,7 @@ def clean(value: Any) -> Any:
 @router.get("/defaults")
 def defaults():
     rows = ar.load_invoice_rows()
-    derived = engine.default_assumptions(rows)
+    derived = engine.default_assumptions(rows, bill_rows=ap.load_bill_rows())
     return clean(
         {
             "assumptions": derived["assumptions"],
@@ -52,16 +53,31 @@ def defaults():
     )
 
 
+@router.get("/macro")
+def get_macro(refresh: bool = False):
+    """Live macro indicators (FRED) plus the overlay values they suggest."""
+    return clean(macro.get_macro(force=refresh))
+
+
+@router.get("/trends")
+def get_trends(as_of: dt.date | None = None):
+    """Micro trends from the invoice and bill history."""
+    invoices = ar.parse_invoices(ar.load_invoice_rows())
+    bills = ap.parse_bills(ap.load_bill_rows())
+    when = as_of or ar.snapshot_date(invoices)
+    return clean(trends.build_trends(invoices, bills, when))
+
+
 @router.post("/forecast")
 def run_forecast(req: ForecastRequest):
     rows = ar.load_invoice_rows()
-    return clean(engine.forecast(rows, req))
+    return clean(engine.forecast(rows, req, ap.load_bill_rows()))
 
 
 @router.post("/export")
 def export_forecast(req: ForecastRequest, format: Literal["xlsx", "csv"] = "xlsx"):
     rows = ar.load_invoice_rows()
-    result = engine.forecast(rows, req)
+    result = engine.forecast(rows, req, ap.load_bill_rows())
     stem = f"neuraflow_cashflow_{req.scenario}_{req.assumptions.general.as_of.isoformat()}"
     if format == "csv":
         body = export.build_csv(result).encode("utf-8")
