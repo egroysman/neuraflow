@@ -10,6 +10,7 @@ import { PayrollPanel } from "./PayrollPanel";
 import { KpiCards, ScenarioPanel, StatementTable } from "./Panels";
 import { ReceivablesTab } from "./ReceivablesTab";
 import { TabAssistant } from "./TabAssistant";
+import { ProjectionsCard } from "./ProjectionsCard";
 import { PayablesPanel } from "./PayablesPanel";
 import { TrendsPanel } from "./TrendsPanel";
 import { API_BASE, downloadExport, fetchDefaults, fetchForecast, money, shortDate } from "./lib";
@@ -415,6 +416,8 @@ export default function CashFlowApp() {
                       arOpen={forecast.ar.open_total}
                       windowLabel={view === "monthly" ? `${horizon} mo` : "13 wk"}
                     />
+
+                    <ProjectionsCard forecast={forecast} minCash={assumptions.general.min_cash} />
 
                     <div className="grid gap-5 2xl:grid-cols-2">
                       {balanceChart && (

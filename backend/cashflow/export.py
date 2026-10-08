@@ -397,6 +397,44 @@ def _gl(ws, g: Dict[str, Any]) -> None:
                                                               "Forecast revenue", "Forecast costs", "Forecast pre-tax"], rows, 18, 16)
 
 
+def _projections(ws, result: Dict[str, Any]) -> None:
+    ws["A1"] = "Standard projections: 30, 60, 90, 180 days and 1 year"
+    ws["A1"].font = Font(bold=True, size=14)
+    projections = result["projections"]
+    headers = ["Measure"] + [p["label"] + ("" if p["complete"] else " (beyond horizon)") for p in projections]
+    _header(ws, 3, headers)
+    rows = [
+        ("Ends on", [p["end_date"] for p in projections]),
+        ("Starting cash", [p["starting_cash"] for p in projections]),
+        ("Cash in", [p["cash_in"] for p in projections]),
+        ("Cash out", [-p["cash_out"] for p in projections]),
+        ("Operating cash flow", [p["operating"] for p in projections]),
+        ("Investing cash flow", [p["investing"] for p in projections]),
+        ("Financing cash flow", [p["financing"] for p in projections]),
+        ("Net change in cash", [p["net_cash_flow"] for p in projections]),
+        ("Ending cash", [p["ending_cash"] for p in projections]),
+        ("Lowest balance", [p["lowest_balance"] for p in projections]),
+        ("Lowest balance date", [p["lowest_balance_date"] for p in projections]),
+        ("First below minimum", [p["first_below_min_date"] or "Never" for p in projections]),
+        ("Funding gap vs minimum", [p["funding_gap"] for p in projections]),
+    ]
+    for r, (label, values) in enumerate(rows, start=4):
+        ws.cell(row=r, column=1, value=label)
+        for c, v in enumerate(values, start=2):
+            if isinstance(v, (dt.date, dt.datetime)):
+                v = v.isoformat()
+            cell = ws.cell(row=r, column=c, value=round(v, 2) if isinstance(v, float) else v)
+            if isinstance(v, (int, float)):
+                cell.number_format = MONEY
+    r = 4 + len(rows) + 1
+    ws.cell(row=r, column=1, value="Ending cash by scenario").font = BOLD
+    for i, (name, c) in enumerate(result["comparison"].items(), start=r + 1):
+        ws.cell(row=i, column=1, value=c["label"])
+        for j, v in enumerate(c["projection_end_cash"], start=2):
+            ws.cell(row=i, column=j, value=round(v, 2)).number_format = MONEY
+    _widths(ws, 30, 18, len(headers))
+
+
 def _scenarios(ws, result: Dict[str, Any]) -> None:
     ws["A1"] = "Scenario comparison: ending cash by month"
     ws["A1"].font = Font(bold=True, size=14)
@@ -464,6 +502,7 @@ def build_xlsx(result: Dict[str, Any], assumptions: Assumptions) -> bytes:
     _summary(wb.active, result, assumptions)
     wb.active.title = "Summary"
     g = assumptions.general
+    _projections(wb.create_sheet("Projections"), result)
     _statement(wb.create_sheet("Monthly"), "Monthly cash flow statement", result["monthly"], g.starting_cash, g.min_cash)
     _statement(wb.create_sheet("13-Week"), "13-week cash flow", result["weekly"], g.starting_cash, g.min_cash)
     _pnl(wb.create_sheet("P&L"), result["pnl"])

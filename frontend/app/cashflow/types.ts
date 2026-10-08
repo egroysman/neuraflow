@@ -211,6 +211,31 @@ export type ScenarioSummary = {
   ending_cash: number;
   lowest_balance: number;
   first_negative_date: string | null;
+  /** Ending cash and lowest balance at 30, 60, 90, 180 days and 1 year. */
+  projection_end_cash: number[];
+  projection_lowest: number[];
+};
+
+export type Projection = {
+  days: number;
+  label: string;
+  end_date: string;
+  /** False when the window runs past the model horizon. */
+  complete: boolean;
+  starting_cash: number;
+  ending_cash: number;
+  net_cash_flow: number;
+  cash_in: number;
+  cash_out: number;
+  operating: number;
+  investing: number;
+  financing: number;
+  lowest_balance: number;
+  lowest_balance_date: string;
+  first_below_min_date: string | null;
+  first_negative_date: string | null;
+  avg_monthly_burn: number;
+  funding_gap: number;
 };
 
 export type AgingRow = {
@@ -251,6 +276,7 @@ export type Forecast = {
     pretax_profit: number;
   }[];
   kpis: { monthly: Kpis; weekly: Kpis };
+  projections: Projection[];
   alerts: Alert[];
   comparison: Record<Scenario, ScenarioSummary>;
   ar: {
