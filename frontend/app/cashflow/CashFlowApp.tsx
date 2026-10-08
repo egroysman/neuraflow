@@ -310,7 +310,13 @@ export default function CashFlowApp() {
 
                 {tab === "receivables" && forecast && (
                   <div role="tabpanel" id="panel-receivables" aria-labelledby="tab-receivables">
-                    <ReceivablesTab forecast={forecast} adjustments={adjustments} calibration={defaults.data_summary.collections_calibration} />
+                    <ReceivablesTab
+                      forecast={forecast}
+                      adjustments={adjustments}
+                      calibration={defaults.data_summary.collections_calibration}
+                      body={{ assumptions, scenario, adjustments }}
+                      onApplyWhatIfs={(changes) => setAdjustments((a) => ({ ...a, ...changes }))}
+                    />
                   </div>
                 )}
                 {tab === "payroll" && forecast && (

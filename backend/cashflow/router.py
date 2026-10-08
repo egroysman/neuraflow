@@ -4,11 +4,11 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from . import ap, ar, engine, export, gl, macro, trends
+from . import ap, ar, assistant, engine, export, gl, macro, trends
 from .models import SCENARIO_LABELS, SCENARIO_PRESETS, ForecastRequest
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
@@ -105,3 +105,25 @@ def export_forecast(req: ForecastRequest, format: Literal["xlsx", "csv"] = "xlsx
             "Access-Control-Expose-Headers": "Content-Disposition",
         },
     )
+
+
+class AssistantRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=1500)
+    history: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
+    customer_id: str | None = Field(default=None, max_length=40)
+    forecast: ForecastRequest
+
+
+@router.post("/ar-assistant")
+def ar_assistant(req: AssistantRequest):
+    """Answer a receivables question from the same forecast the user is looking at."""
+    rows = ar.load_invoice_rows()
+    result = engine.forecast(rows, req.forecast, ap.load_bill_rows(), gl.load_gl())
+    context = assistant.build_context(result, ar.parse_invoices(rows), req.customer_id)
+    try:
+        answer = assistant.ask(context, req.message, req.history)
+    except assistant.AssistantUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # the model call failed: report it without a stack trace
+        raise HTTPException(status_code=502, detail=f"The assistant couldn't answer: {e}")
+    return clean(answer)

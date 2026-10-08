@@ -231,6 +231,8 @@ type Slider = {
   step: number;
   digits: number;
   hint: string;
+  /** Show as dollars, e.g. +$5,000 */
+  money?: boolean;
 };
 
 const SLIDER_LIST: Slider[] = [
@@ -252,34 +254,68 @@ const SLIDER_LIST: Slider[] = [
   { key: "capex_delay_months", label: "Delay growth capex", unit: "months", min: 0, max: 12, step: 1, digits: 0, hint: "Pushes every growth purchase later" },
   { key: "rate_change_pts", label: "Interest rates", unit: "pts", min: -3, max: 5, step: 0.25, digits: 2, hint: "Floating loans and new financed capex" },
   { key: "tax_rate_change_pts", label: "Income tax rate", unit: "pts", min: -10, max: 15, step: 1, digits: 0, hint: "Added to the tax rate on the General settings" },
+  { key: "bill_catchup_extra_days", label: "Clear overdue bills slower", unit: "days", min: 0, max: 90, step: 1, digits: 0, hint: "Extra days on bills that are already past due" },
+  { key: "top_vendor_delay_days", label: "Pay your largest vendor later", unit: "days", min: 0, max: 90, step: 1, digits: 0, hint: "Delays only the vendor you owe the most" },
+  { key: "benefits_change_pct", label: "Benefits cost", unit: "%", min: -30, max: 60, step: 5, digits: 0, hint: "Scales every employee's benefits" },
+  { key: "employer_tax_change_pts", label: "Employer payroll taxes", unit: "pts", min: -3, max: 6, step: 0.5, digits: 1, hint: "Added to the employer tax rate" },
+  { key: "maintenance_capex_change_pct", label: "Maintenance capex", unit: "%", min: -100, max: 200, step: 10, digits: 0, hint: "Scales recurring and planned maintenance purchases" },
+  { key: "down_payment_change_pts", label: "Down payment on financed items", unit: "pts", min: -20, max: 50, step: 5, digits: 0, hint: "More cash up front, smaller loans or leases" },
+  { key: "extra_loan_payment", label: "Extra payment on the first loan", unit: "/mo", min: 0, max: 20000, step: 500, digits: 0, hint: "Paid every month on top of the scheduled payment", money: true },
+  { key: "equity_injection", label: "Owner cash in (+) or out (−)", unit: "", min: -500000, max: 500000, step: 10000, digits: 0, hint: "One-time, at the start date", money: true },
+  { key: "starting_cash_change", label: "Starting cash vs ledger", unit: "", min: -250000, max: 250000, step: 5000, digits: 0, hint: "What if the bank balance is not what the ledger says", money: true },
+  { key: "other_monthly_cash", label: "Other cash each month", unit: "/mo", min: -50000, max: 50000, step: 1000, digits: 0, hint: "Items not in any assumption, in (+) or out (−)", money: true },
+  { key: "one_time_cash_item", label: "Surprise one-off item", unit: "", min: -250000, max: 250000, step: 5000, digits: 0, hint: "Lands in month 3", money: true },
+  { key: "seasonal_swing_pct", label: "Seasonal swing in sales", unit: "%", min: 0, max: 40, step: 5, digits: 0, hint: "Sales peak in December and dip in June" },
+  { key: "top_customer_loss_pct", label: "Lose part of the largest customer", unit: "%", min: 0, max: 100, step: 5, digits: 0, hint: "Share of their sales (last 12 months) that goes away" },
+  { key: "new_sales_dso_change_days", label: "New sales pay slower (+) or faster (−)", unit: "days", min: -20, max: 60, step: 1, digits: 0, hint: "Affects new invoices only, not today's open ones" },
 ];
-const SLIDER_BY_KEY = Object.fromEntries(SLIDER_LIST.map((s) => [s.key, s])) as Record<keyof Adjustments, Slider>;
+export const SLIDER_BY_KEY = Object.fromEntries(SLIDER_LIST.map((s) => [s.key, s])) as Record<keyof Adjustments, Slider>;
 
-const CORE_KEYS: (keyof Adjustments)[] = [
-  "revenue_change_pct", "growth_change_pct_pts", "collection_delay_days", "extra_bad_debt_pct",
-  "cogs_change_pct_pts", "opex_change_pct", "dpo_change_days", "capex_change_pct",
-];
-
-/** Which sliders each tab shows, which groups' cash impact it reports, and a line about it. */
+/** Every lever lives on exactly one tab. */
 const TAB_WHATIFS: Record<TabId, { title: string; keys: (keyof Adjustments)[]; groups: WhatIfGroup[]; note: string }> = {
-  forecast: { title: "What-ifs: whole forecast", keys: [...CORE_KEYS, "rate_change_pts", "tax_rate_change_pts"], groups: [], note: "Levers for the whole model. Open another tab for more detailed levers." },
+  forecast: { title: "What-ifs: the business", keys: ["revenue_change_pct", "growth_change_pct_pts", "opex_change_pct"], groups: ["operations"], note: "Sales level, growth and overhead. Each other tab has its own levers." },
   receivables: {
     title: "What-ifs: receivables",
-    keys: ["collection_delay_days", "past_due_delay_days", "top_customer_delay_days", "collectability_change_pts", "extra_bad_debt_pct", "revenue_change_pct", "growth_change_pct_pts"],
+    keys: ["collection_delay_days", "past_due_delay_days", "top_customer_delay_days", "collectability_change_pts", "extra_bad_debt_pct"],
     groups: ["ar"],
     note: "How fast and how fully customers pay.",
   },
-  payroll: { title: "What-ifs: payroll", keys: ["salary_change_pct", "raise_change_pct_pts", "extra_hires", "bonus_change_pct"], groups: ["payroll"], note: "Hiring, pay and bonuses." },
-  payables: { title: "What-ifs: payables", keys: ["dpo_change_days", "cogs_change_pct_pts", "opex_change_pct", "revenue_change_pct"], groups: ["payables"], note: "When you pay vendors and what they cost." },
-  capex: { title: "What-ifs: capex & financing", keys: ["capex_change_pct", "capex_delay_months", "rate_change_pts", "revenue_change_pct"], groups: ["capex", "financing"], note: "Size, timing and financing cost of purchases." },
-  balance: {
-    title: "What-ifs: balance sheet drivers",
-    keys: ["collection_delay_days", "extra_bad_debt_pct", "dpo_change_days", "capex_change_pct", "rate_change_pts", "tax_rate_change_pts", "opex_change_pct", "revenue_change_pct"],
-    groups: [],
-    note: "Everything here moves receivables, payables, debt or equity.",
+  payroll: {
+    title: "What-ifs: payroll",
+    keys: ["salary_change_pct", "raise_change_pct_pts", "extra_hires", "bonus_change_pct", "benefits_change_pct", "employer_tax_change_pts"],
+    groups: ["payroll"],
+    note: "Hiring, pay, bonuses and what each person costs on top.",
   },
-  gl: { title: "What-ifs: actuals vs forecast", keys: [...CORE_KEYS, "rate_change_pts", "tax_rate_change_pts"], groups: [], note: "Compare scenarios with what the ledger shows." },
-  trends: { title: "What-ifs: trends", keys: ["revenue_change_pct", "growth_change_pct_pts", "collection_delay_days", "dpo_change_days"], groups: [], note: "Try a trend continuing or reversing." },
+  payables: {
+    title: "What-ifs: payables",
+    keys: ["dpo_change_days", "bill_catchup_extra_days", "top_vendor_delay_days", "cogs_change_pct_pts"],
+    groups: ["payables"],
+    note: "When you pay vendors and what they charge.",
+  },
+  capex: {
+    title: "What-ifs: capex",
+    keys: ["capex_change_pct", "capex_delay_months", "maintenance_capex_change_pct", "down_payment_change_pts"],
+    groups: ["capex"],
+    note: "Size, timing and funding of purchases.",
+  },
+  balance: {
+    title: "What-ifs: balance sheet",
+    keys: ["rate_change_pts", "tax_rate_change_pts", "extra_loan_payment", "equity_injection"],
+    groups: ["financing"],
+    note: "Debt, interest, tax and owner money. Every slider here moves debt, equity or cash.",
+  },
+  gl: {
+    title: "What-ifs: ledger & other cash",
+    keys: ["starting_cash_change", "other_monthly_cash", "one_time_cash_item"],
+    groups: ["ledger"],
+    note: "Cash the ledger or the assumptions might be missing.",
+  },
+  trends: {
+    title: "What-ifs: trends",
+    keys: ["seasonal_swing_pct", "top_customer_loss_pct", "new_sales_dso_change_days"],
+    groups: ["trends"],
+    note: "Seasonality, customer concentration and slower new-sale payments.",
+  },
 };
 
 const SCENARIOS: Scenario[] = ["base", "best", "worst"];
@@ -303,6 +339,26 @@ const PRESET_LABELS: Record<keyof Adjustments, string> = {
   capex_delay_months: "capex delay",
   rate_change_pts: "rates",
   tax_rate_change_pts: "tax rate",
+  bill_catchup_extra_days: "overdue bills",
+  top_vendor_delay_days: "largest vendor",
+  benefits_change_pct: "benefits",
+  employer_tax_change_pts: "payroll taxes",
+  maintenance_capex_change_pct: "maintenance capex",
+  down_payment_change_pts: "down payments",
+  extra_loan_payment: "loan prepayment",
+  equity_injection: "owner cash",
+  starting_cash_change: "starting cash",
+  other_monthly_cash: "other monthly cash",
+  one_time_cash_item: "one-off item",
+  seasonal_swing_pct: "seasonality",
+  top_customer_loss_pct: "customer loss",
+  new_sales_dso_change_days: "new-sale timing",
+};
+
+export const fmtSlider = (s: Slider, v: number) => {
+  if (!s.money) return `${signed(v, s.digits)} ${s.unit}`.trim();
+  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  return `${sign}$${Math.abs(v).toLocaleString("en-US")}${s.unit}`;
 };
 
 const signedMoney = (v: number) => `${v >= 0 ? "+" : "-"}${money(Math.abs(v))}`;
@@ -398,7 +454,7 @@ export function ScenarioPanel({
                     {s.label}
                   </label>
                   <span className={`text-xs font-semibold tabular-nums ${value === 0 ? "text-[#6b7280]" : "text-[#60a5fa]"}`}>
-                    {signed(value, s.digits)} {s.unit}
+                    {fmtSlider(s, value)}
                   </span>
                 </div>
                 <input
@@ -410,7 +466,7 @@ export function ScenarioPanel({
                   value={value}
                   onChange={(e) => onAdjustments({ ...adjustments, [s.key]: Number(e.target.value) })}
                   className="mt-1 h-1.5 w-full cursor-pointer accent-[#60a5fa]"
-                  aria-valuetext={`${signed(value, s.digits)} ${s.unit}`}
+                  aria-valuetext={fmtSlider(s, value)}
                 />
                 <div className="text-[11px] text-[#6b7280]">{s.hint}</div>
               </div>
@@ -421,7 +477,7 @@ export function ScenarioPanel({
         {hidden.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#78350f] bg-[#2b1d07] px-3 py-2 text-xs text-[#fde68a]" role="status">
             <span>
-              Also active on other tabs: {hidden.map((k) => `${PRESET_LABELS[k]} ${signed(adjustments[k], SLIDER_BY_KEY[k].digits)} ${SLIDER_BY_KEY[k].unit}`).join(", ")}.
+              Also active on other tabs: {hidden.map((k) => `${PRESET_LABELS[k]} ${fmtSlider(SLIDER_BY_KEY[k], adjustments[k])}`).join(", ")}.
             </span>
             <GhostButton onClick={() => onAdjustments({ ...adjustments, ...Object.fromEntries(hidden.map((k) => [k, 0])) })}>Clear those</GhostButton>
           </div>
@@ -444,9 +500,13 @@ const AGING_COLORS = ["#34d399", "#a3e635", "#fbbf24", "#fb923c", "#f87171", "#b
 export function ReceivablesPanel({
   ar,
   calibration,
+  selected,
+  onSelect,
 }: {
   ar: Forecast["ar"];
   calibration?: Defaults["data_summary"]["collections_calibration"];
+  selected?: string | null;
+  onSelect?: (customerId: string | null) => void;
 }) {
   const total = ar.aging.reduce((sum: number, a: AgingRow) => sum + a.open_amount, 0) || 1;
   return (
@@ -489,8 +549,22 @@ export function ReceivablesPanel({
           </thead>
           <tbody>
             {ar.customers.map((c: CustomerRow) => (
-              <tr key={c.customer_id} className="border-t border-[#1a1d24]">
-                <th scope="row" className="px-3 py-1.5 text-left font-medium text-[#e5e7eb]">{c.customer_id}</th>
+              <tr key={c.customer_id} className={`border-t border-[#1a1d24] ${selected === c.customer_id ? "bg-[#12203a]" : ""}`}>
+                <th scope="row" className="px-3 py-1.5 text-left font-medium text-[#e5e7eb]">
+                  {onSelect ? (
+                    <button
+                      type="button"
+                      aria-pressed={selected === c.customer_id}
+                      onClick={() => onSelect(selected === c.customer_id ? null : c.customer_id)}
+                      className="rounded text-left underline decoration-dotted underline-offset-2 hover:text-white"
+                      title="Ask the assistant about this customer"
+                    >
+                      {c.customer_id}
+                    </button>
+                  ) : (
+                    c.customer_id
+                  )}
+                </th>
                 <td className="px-3 py-1.5 text-right tabular-nums">{c.open_invoices}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{money(c.open_amount)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{money(c.expected_in_horizon)}</td>

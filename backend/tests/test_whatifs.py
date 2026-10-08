@@ -151,3 +151,81 @@ def test_simple_payroll_mode_respects_new_levers():
     base = run(a=a)["pnl"][3]["payroll"]
     assert run(Adjustments(extra_hires=2), a=a)["pnl"][3]["payroll"] > base
     assert run(Adjustments(salary_change_pct=10), a=a)["pnl"][3]["payroll"] == pytest.approx(base * 1.1, rel=0.001)
+
+
+# ---------------------------- per-tab levers (round 2) ----------------------------
+
+NEW_LEVERS = [
+    ("bill_catchup_extra_days", 60, "payables"),
+    ("top_vendor_delay_days", 60, "payables"),
+    ("benefits_change_pct", 50, "payroll"),
+    ("employer_tax_change_pts", 5, "payroll"),
+    ("maintenance_capex_change_pct", 100, "capex"),
+    ("down_payment_change_pts", 30, "capex"),
+    ("extra_loan_payment", 5000, "financing"),
+    ("equity_injection", 100000, "financing"),
+    ("starting_cash_change", -50000, "ledger"),
+    ("other_monthly_cash", -2000, "ledger"),
+    ("one_time_cash_item", -30000, "ledger"),
+    ("seasonal_swing_pct", 30, "trends"),
+    ("top_customer_loss_pct", 50, "trends"),
+    ("new_sales_dso_change_days", 30, "trends"),
+]
+
+
+@pytest.mark.parametrize("field,value,group", NEW_LEVERS)
+def test_new_lever_changes_the_model_and_balance_sheet_still_balances(field, value, group):
+    r = run(Adjustments(**{field: value}))
+    assert r["whatif_impact"][group]["active"]
+    timing = [w["categories"]["ap_open_bills"] for w in r["weekly"]] != [w["categories"]["ap_open_bills"] for w in BASE["weekly"]]
+    changed = (
+        timing
+        or end(r) != end(BASE)
+        or r["kpis"]["monthly"]["lowest_balance"] != BASE["kpis"]["monthly"]["lowest_balance"]
+        or r["balance_sheet"]["months"][-1]["equity"] != BASE["balance_sheet"]["months"][-1]["equity"]
+    )
+    assert changed, field
+    assert r["balance_sheet"]["max_abs_check"] < 0.01
+
+
+def test_every_lever_belongs_to_exactly_one_group():
+    seen = {}
+    for g, fields in Adjustments.GROUPS.items():
+        for f in fields:
+            assert f not in seen, f
+            seen[f] = g
+    assert set(seen) == set(Adjustments.model_fields)
+
+
+def test_equity_injection_and_loan_prepayment_move_debt_and_cash():
+    r = run(Adjustments(equity_injection=100000))
+    assert end(r) == pytest.approx(end(BASE) + 100000, abs=1)
+    r2 = run(Adjustments(extra_loan_payment=5000))
+    assert r2["balance_sheet"]["months"][-1]["debt"] < BASE["balance_sheet"]["months"][-1]["debt"]
+
+
+def test_starting_cash_change_shifts_every_balance():
+    r = run(Adjustments(starting_cash_change=25000))
+    assert r["balance_sheet"]["opening"]["cash"] == BASE["balance_sheet"]["opening"]["cash"] + 25000
+    assert end(r) == pytest.approx(end(BASE) + 25000, abs=1)
+
+
+def test_top_vendor_delay_moves_only_that_vendor():
+    bills = ap.parse_bills(BILLS)
+    as_of = ar.snapshot_date(ar.parse_invoices(ROWS))
+    plain = ap.project_open_bills(bills, as_of)
+    late = ap.project_open_bills(bills, as_of, top_vendor_delay_days=30)
+    by_id = {p["bill_id"]: p for p in plain}
+    moved = {q["vendor_id"] for q in late if q["expected_date"] != by_id[q["bill_id"]]["expected_date"]}
+    assert len(moved) == 1
+
+
+def test_top_customer_loss_cuts_revenue_by_that_customers_share():
+    r = run(Adjustments(top_customer_loss_pct=100))
+    assert r["pnl"][0]["revenue"] < BASE["pnl"][0]["revenue"] * 0.97
+
+
+def test_seasonal_swing_is_zero_sum_shaped_peak_in_december():
+    r = run(Adjustments(seasonal_swing_pct=40))
+    months = {p["label"][:3]: p["revenue"] / b["revenue"] for p, b in zip(r["pnl"], BASE["pnl"])}
+    assert months["Dec"] > 1.1 and months["Jun"] < 0.9

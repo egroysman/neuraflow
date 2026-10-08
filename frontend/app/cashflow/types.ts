@@ -30,6 +30,20 @@ export type Adjustments = {
   capex_delay_months: number;
   rate_change_pts: number;
   tax_rate_change_pts: number;
+  bill_catchup_extra_days: number;
+  top_vendor_delay_days: number;
+  benefits_change_pct: number;
+  employer_tax_change_pts: number;
+  maintenance_capex_change_pct: number;
+  down_payment_change_pts: number;
+  extra_loan_payment: number;
+  equity_injection: number;
+  starting_cash_change: number;
+  other_monthly_cash: number;
+  one_time_cash_item: number;
+  seasonal_swing_pct: number;
+  top_customer_loss_pct: number;
+  new_sales_dso_change_days: number;
 };
 
 export type OpexLine = {
@@ -256,7 +270,7 @@ export type Forecast = {
   macro: MacroEffect;
 };
 
-export type WhatIfGroup = "ar" | "payroll" | "payables" | "capex" | "financing" | "operations";
+export type WhatIfGroup = "ar" | "payroll" | "payables" | "capex" | "financing" | "ledger" | "trends" | "operations";
 
 export type PayrollResult = {
   employees: {
@@ -575,6 +589,20 @@ export const NO_ADJUSTMENTS: Adjustments = {
   capex_delay_months: 0,
   rate_change_pts: 0,
   tax_rate_change_pts: 0,
+  bill_catchup_extra_days: 0,
+  top_vendor_delay_days: 0,
+  benefits_change_pct: 0,
+  employer_tax_change_pts: 0,
+  maintenance_capex_change_pct: 0,
+  down_payment_change_pts: 0,
+  extra_loan_payment: 0,
+  equity_injection: 0,
+  starting_cash_change: 0,
+  other_monthly_cash: 0,
+  one_time_cash_item: 0,
+  seasonal_swing_pct: 0,
+  top_customer_loss_pct: 0,
+  new_sales_dso_change_days: 0,
 };
 
 export type TabId = "forecast" | "receivables" | "payroll" | "balance" | "gl" | "payables" | "capex" | "trends";
