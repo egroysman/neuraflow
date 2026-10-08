@@ -1,0 +1,26 @@
+AccountID,AccountName,AccountType,Subtype,ModelLine
+1000,Cash - Operating,Asset,Cash,cash
+1100,Accounts Receivable,Asset,Receivables,ar
+1500,Property & Equipment,Asset,Fixed assets,ppe
+1590,Accumulated Depreciation,Asset,Fixed assets,ppe
+2000,Accounts Payable,Liability,Payables,ap
+2500,Term Loan,Liability,Debt,debt
+3000,Paid-in Capital,Equity,Equity,equity
+3900,Retained Earnings (opening),Equity,Equity,equity
+4000,Product Revenue,Revenue,Revenue,revenue
+5000,Cost of Sales,Expense,Cost of sales,cogs
+6100,Wages - Operations,Expense,Payroll,payroll
+6110,Wages - Sales,Expense,Payroll,payroll
+6120,Wages - Finance & Admin,Expense,Payroll,payroll
+6130,Wages - Product & Engineering,Expense,Payroll,payroll
+6150,Bonuses,Expense,Payroll,payroll
+6160,Employer Payroll Taxes,Expense,Payroll,payroll
+6170,Employee Benefits,Expense,Payroll,payroll
+6200,Rent & Facilities,Expense,Operating expense,opex:Rent & facilities
+6210,Software & Tools,Expense,Operating expense,opex:Software & tools
+6220,Professional Fees,Expense,Operating expense,opex:Insurance & professional fees
+6230,Insurance,Expense,Operating expense,opex:Insurance & professional fees
+6240,Marketing,Expense,Operating expense,opex:Marketing
+6250,Repairs & Maintenance,Expense,Operating expense,opex:Rent & facilities
+6800,Depreciation,Expense,Depreciation,depreciation
+7000,Interest Expense,Expense,Interest,interest

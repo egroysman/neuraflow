@@ -1,4 +1,4 @@
-import type { Adjustments, Assumptions, Defaults, Forecast, MacroData, Scenario, Trends } from "./types";
+import type { Adjustments, Assumptions, Defaults, Forecast, GlBaselines, GlOverview, MacroData, Scenario, Trends } from "./types";
 
 // Backend base URL. Defaults to the deployed NeuraFlow API (same as the home page); set NEXT_PUBLIC_API_BASE=http://localhost:8000 for local development.
 export const API_BASE = (
@@ -76,6 +76,35 @@ export async function fetchTrends(signal?: AbortSignal): Promise<Trends> {
   const res = await fetch(`${API_BASE}/cashflow/trends`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
+}
+
+export async function fetchGl(asOf?: string, signal?: AbortSignal): Promise<GlOverview> {
+  const res = await fetch(`${API_BASE}/cashflow/gl${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ""}`, { signal });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+/** Replace the ledger-driven assumptions with the baselines from the general ledger. */
+export function applyGlBaselines(a: Assumptions, b: GlBaselines): Assumptions {
+  const next = structuredClone(a);
+  next.general.starting_cash = Math.round(b.starting_cash);
+  next.sales.monthly_revenue = Math.round(b.monthly_revenue);
+  next.costs.cogs_pct = Math.round(b.cogs_pct * 10) / 10;
+  next.capex.existing_depreciation_monthly = Math.round(b.depreciation_monthly);
+  next.capex.opening_ppe_net = Math.round(b.ppe_net);
+  next.opex = Object.entries(b.opex_monthly).map(([name, amount]) =>
+    name === "Marketing" && b.monthly_revenue
+      ? { name, kind: "pct_revenue" as const, amount: Math.round((amount / b.monthly_revenue) * 10000) / 100, growth_pct_monthly: 0, start_month: 0, end_month: null }
+      : { name, kind: "fixed" as const, amount: Math.round(amount / 50) * 50, growth_pct_monthly: 0, start_month: 0, end_month: null }
+  );
+  if (b.loan) {
+    const rest = next.loans.slice(1);
+    next.loans = [
+      { name: next.loans[0]?.name || "Term loan", balance: Math.round(b.loan.balance), annual_rate_pct: Math.round(b.loan.annual_rate_pct * 100) / 100, monthly_payment: Math.round(b.loan.monthly_payment), floating: next.loans[0]?.floating ?? false },
+      ...rest,
+    ];
+  }
+  return next;
 }
 
 export async function fetchMacro(refresh = false, signal?: AbortSignal): Promise<MacroData> {

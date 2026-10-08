@@ -17,7 +17,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import ap, ar, capex
+from . import ap, ar, balance_sheet, capex, gl as gl_mod, payroll as payroll_mod
 from .models import (
     AP,
     Capex,
@@ -28,6 +28,7 @@ from .models import (
     Assumptions,
     Collections,
     Costs,
+    Employee,
     ForecastRequest,
     General,
     Hire,
@@ -186,6 +187,12 @@ def build_events(
                 )
             )
 
+    roster_payroll = None
+    if a.payroll.use_roster and a.payroll.employees:
+        roster_payroll = payroll_mod.build(a, inflation, window)
+        for when, amount, label in roster_payroll["events"]:
+            events.append(Event(when, "payroll", amount, label))
+
     revenue: List[float] = []
     cogs: List[float] = []
     payroll_cost: List[float] = []
@@ -211,13 +218,16 @@ def build_events(
             Event(invoice_date + _days(dpo), "cogs_vendors", -cost, f"Vendors, month {k + 1}")
         )
 
-        # Payroll: headcount, annual raises, hiring plan; paid twice a month.
-        heads = a.payroll.headcount + sum(h.count for h in a.payroll.hires if h.month <= k)
-        raise_factor = (1.0 + (a.payroll.salary_growth_pct_annual + inflation) / 100.0) ** (k / 12.0)
-        payroll = heads * a.payroll.avg_salary * raise_factor / 12.0 * (1.0 + a.payroll.burden_pct / 100.0)
-        payroll_cost.append(payroll)
-        events.append(Event(start + dt.timedelta(days=14), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
-        events.append(Event(finish - dt.timedelta(days=1), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
+        # Payroll: roster + pay runs, or the simple headcount model.
+        if roster_payroll is not None:
+            payroll_cost.append(roster_payroll["monthly"][k])
+        else:
+            heads = a.payroll.headcount + sum(h.count for h in a.payroll.hires if h.month <= k)
+            raise_factor = (1.0 + (a.payroll.salary_growth_pct_annual + inflation) / 100.0) ** (k / 12.0)
+            payroll = heads * a.payroll.avg_salary * raise_factor / 12.0 * (1.0 + a.payroll.burden_pct / 100.0)
+            payroll_cost.append(payroll)
+            events.append(Event(start + dt.timedelta(days=14), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
+            events.append(Event(finish - dt.timedelta(days=1), "payroll", -payroll / 2, f"Payroll, month {k + 1}"))
 
         # Operating expense lines.
         month_opex = 0.0
@@ -266,9 +276,11 @@ def build_events(
         for k in range(n)
     ]
     rate = g.tax_rate_pct / 100.0
+    tax_expense = [0.0] * n
     for q in range(n // 3):
         profit = sum(pretax[3 * q : 3 * q + 3])
         tax = rate * max(0.0, profit)
+        tax_expense[3 * q + 2] = tax
         pay_date = add_months(as_of, 3 * q + 3) + dt.timedelta(days=14)
         if tax > 0 and pay_date < end:
             events.append(Event(pay_date, "taxes", -tax, f"Estimated tax, quarter {q + 1}"))
@@ -304,6 +316,8 @@ def build_events(
     if extras is not None:
         extras["projected_bills"] = projected_bills
         extras["capex"] = plan
+        extras["tax_expense"] = tax_expense
+        extras["payroll"] = payroll_mod.summary(roster_payroll, a, as_of) if roster_payroll else None
     return events, projected, pnl
 
 
@@ -509,6 +523,7 @@ def forecast(
     rows: List[Dict[str, Any]],
     req: ForecastRequest,
     bill_rows: Optional[List[Dict[str, Any]]] = None,
+    gl_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     invoices = ar.parse_invoices(rows)
     bills = ap.parse_bills(bill_rows) if bill_rows else []
@@ -557,6 +572,9 @@ def forecast(
             "opening_ap_lump": a.costs.opening_ap,
         },
         "capex": run.extras["capex"],
+        "payroll": run.extras.get("payroll"),
+        "balance_sheet": balance_sheet.build(run),
+        "gl": gl_mod.compare(gl_mod.prepare(gl_data), g.as_of, run.pnl) if gl_data else None,
         "macro": macro_effect(invoices, a, total_adj, bills, run),
         "ar": {
             "open_total": open_total,
@@ -602,8 +620,10 @@ def default_assumptions(
     rows: List[Dict[str, Any]],
     today: Optional[dt.date] = None,
     bill_rows: Optional[List[Dict[str, Any]]] = None,
+    payroll_rows: Optional[List[Dict[str, Any]]] = None,
+    gl_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Defaults derived from the invoice data.
+    """Defaults derived from the invoice data (and the GL and payroll roster, when given).
 
     Receivables inputs (start date, revenue run-rate, days-to-pay) come from the
     data. Everything else (payroll, opex, debt, one-offs) is an *illustrative
@@ -625,11 +645,74 @@ def default_assumptions(
     summary["ap"] = ap_summary
     dpo_days = round(ap_summary["actual_dpo_days"]) if ap_summary and ap_summary["actual_dpo_days"] else 30
 
+    # Ledger baselines: trailing three complete months and balances at the start date.
+    gl_base = None
+    if gl_data:
+        prepared = gl_mod.prepare(gl_data)
+        gl_base = gl_mod.baselines(prepared, as_of)
+    summary["gl_baselines"] = gl_base
+    driven: List[str] = []
+
+    roster = None
+    if payroll_rows:
+        employees = []
+        for r in payroll_rows:
+            try:
+                employees.append(
+                    Employee(
+                        id=r["EmployeeID"], department=r.get("Department") or "General", title=r.get("Title") or "",
+                        pay_type=(r.get("PayType") or "salary").lower(),
+                        annual_salary=float(r.get("AnnualSalary") or 0), hourly_rate=float(r.get("HourlyRate") or 0),
+                        hours_per_week=float(r.get("HoursPerWeek") or 40),
+                        hire_date=dt.date.fromisoformat(r["HireDate"][:10]),
+                        term_date=dt.date.fromisoformat(r["TermDate"][:10]) if r.get("TermDate") else None,
+                        bonus_pct=float(r.get("BonusPct") or 0), benefits_monthly=float(r.get("BenefitsMonthly") or 0),
+                    )
+                )
+            except (KeyError, ValueError):
+                continue
+        if employees:
+            nxt = as_of + dt.timedelta(days=(4 - as_of.weekday()) % 7 or 7)
+            roster = dict(use_roster=True, employees=employees, pay_frequency="biweekly", next_pay_date=nxt)
+            summary["payroll"] = {"employees": len(employees), "source": "roster"}
+
+    if gl_base:
+        revenue = gl_base["monthly_revenue"] or revenue
+        driven += ["starting_cash", "monthly_revenue", "cogs_pct", "opening_ppe_net"]
+
+    opex_lines = [
+        OpexLine(name="Rent & facilities", kind="fixed", amount=_round_to(revenue * 0.052, 500)),
+        OpexLine(name="Software & tools", kind="fixed", amount=_round_to(revenue * 0.026, 500)),
+        OpexLine(name="Insurance & professional fees", kind="fixed", amount=_round_to(revenue * 0.049, 500)),
+        OpexLine(name="Marketing", kind="pct_revenue", amount=4),
+    ]
+    loan_default = Loan(
+        name="Term loan", balance=_round_to(revenue * 1.2, 1000), annual_rate_pct=8,
+        monthly_payment=_round_to(revenue * 0.026, 100),
+    )
+    existing_dep = _round_to(revenue * 0.012, 100)
+    if gl_base:
+        opex_lines = []
+        for name, amount in gl_base["opex_monthly"].items():
+            if name == "Marketing" and revenue:
+                opex_lines.append(OpexLine(name=name, kind="pct_revenue", amount=round(amount / revenue * 100.0, 2)))
+            else:
+                opex_lines.append(OpexLine(name=name, kind="fixed", amount=_round_to(amount, 50)))
+        driven.append("opex")
+        if gl_base["loan"]:
+            ln = gl_base["loan"]
+            loan_default = Loan(name="Term loan", balance=round(ln["balance"]), annual_rate_pct=round(ln["annual_rate_pct"], 2),
+                                monthly_payment=round(ln["monthly_payment"]))
+            driven.append("loans")
+        existing_dep = round(gl_base["depreciation_monthly"])
+        driven.append("depreciation")
+    summary["driven_by_gl"] = driven
+
     assumptions = Assumptions(
         general=General(
             as_of=as_of,
             horizon_months=12,
-            starting_cash=_round_to(revenue * 1.5, 1000),
+            starting_cash=round(gl_base["starting_cash"]) if gl_base else _round_to(revenue * 1.5, 1000),
             min_cash=_round_to(revenue * 0.5, 1000),
             tax_rate_pct=25,
         ),
@@ -640,7 +723,7 @@ def default_assumptions(
             bad_debt_pct=1,
         ),
         costs=Costs(
-            cogs_pct=40,
+            cogs_pct=round(gl_base["cogs_pct"], 1) if gl_base else 40,
             dpo_days=dpo_days,
             opening_ap=round(ap_summary["open_ap"]) if ap_summary else round(revenue * 0.40 * 30 / 30),
         ),
@@ -655,26 +738,16 @@ def default_assumptions(
             burden_pct=burden,
             salary_growth_pct_annual=3,
             hires=[Hire(month=3, count=1), Hire(month=6, count=1)],
+            **(roster or {}),
         ),
-        opex=[
-            OpexLine(name="Rent & facilities", kind="fixed", amount=_round_to(revenue * 0.052, 500)),
-            OpexLine(name="Software & tools", kind="fixed", amount=_round_to(revenue * 0.026, 500)),
-            OpexLine(name="Insurance & professional fees", kind="fixed", amount=_round_to(revenue * 0.049, 500)),
-            OpexLine(name="Marketing", kind="pct_revenue", amount=4),
-        ],
-        loans=[
-            Loan(
-                name="Term loan",
-                balance=_round_to(revenue * 1.2, 1000),
-                annual_rate_pct=8,
-                monthly_payment=_round_to(revenue * 0.026, 100),
-            )
-        ],
+        opex=opex_lines,
+        loans=[loan_default],
         one_time=[],
         capex=Capex(
             maintenance_pct_revenue=1.0,
             maintenance_life_months=60,
-            existing_depreciation_monthly=_round_to(revenue * 0.012, 100),
+            existing_depreciation_monthly=existing_dep,
+            opening_ppe_net=round(gl_base['ppe_net']) if gl_base else 0,
             growth_revenue_link=0.5,
             items=[
                 CapexItem(

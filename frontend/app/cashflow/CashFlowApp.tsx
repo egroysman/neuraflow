@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { AssumptionsEditor } from "./AssumptionsEditor";
 import { FlowChart, Legend, LineChart } from "./Charts";
+import { BalanceSheetPanel } from "./BalanceSheetPanel";
 import { CapexPanel } from "./CapexPanel";
+import { GlPanel } from "./GlPanel";
+import { PayrollPanel } from "./PayrollPanel";
 import { KpiCards, ReceivablesPanel, ScenarioPanel, StatementTable } from "./Panels";
 import { PayablesPanel } from "./PayablesPanel";
 import { TrendsPanel } from "./TrendsPanel";
@@ -40,11 +43,29 @@ function normalizeAssumptions(saved: Assumptions, defaults: Assumptions): Assump
   if (!next.capex) next.capex = { ...structuredClone(defaults.capex), items: [] };
   if (!next.macro) next.macro = structuredClone(defaults.macro);
   next.loans = next.loans.map((l) => ({ ...l, floating: l.floating ?? false }));
+  // Saves from before the payroll roster and balance sheet: adopt the roster and opening asset base.
+  if (next.payroll.use_roster === undefined || !Array.isArray(next.payroll.employees)) {
+    const d = defaults.payroll;
+    next.payroll = {
+      ...next.payroll,
+      use_roster: d.use_roster,
+      employees: structuredClone(d.employees),
+      pay_frequency: d.pay_frequency,
+      next_pay_date: d.next_pay_date,
+      employer_tax_pct: d.employer_tax_pct,
+      raise_month: d.raise_month,
+      bonus_month: d.bonus_month,
+    };
+  }
+  if (next.capex.opening_ppe_net === undefined) next.capex.opening_ppe_net = defaults.capex.opening_ppe_net;
   return next;
 }
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "forecast", label: "Forecast" },
+  { id: "payroll", label: "Payroll" },
+  { id: "balance", label: "Balance Sheet" },
+  { id: "gl", label: "GL & Actuals" },
   { id: "payables", label: "Payables (AP)" },
   { id: "capex", label: "Capex" },
   { id: "trends", label: "Trends" },
@@ -251,7 +272,7 @@ export default function CashFlowApp() {
                   presets={defaults.scenarios}
                   comparison={forecast?.comparison}
                 />
-                <AssumptionsEditor value={assumptions} onChange={setAssumptions} onReset={resetAssumptions} />
+                <AssumptionsEditor value={assumptions} onChange={setAssumptions} onReset={resetAssumptions} fromGl={defaults.data_summary.driven_by_gl ?? []} />
               </aside>
 
               <main className={`min-w-0 space-y-5 transition-opacity ${busy ? "opacity-70" : "opacity-100"}`}>
@@ -283,6 +304,21 @@ export default function CashFlowApp() {
                   ))}
                 </div>
 
+                {tab === "payroll" && forecast && (
+                  <div role="tabpanel" id="panel-payroll" aria-labelledby="tab-payroll">
+                    <PayrollPanel forecast={forecast} assumptions={assumptions} />
+                  </div>
+                )}
+                {tab === "balance" && forecast && (
+                  <div role="tabpanel" id="panel-balance" aria-labelledby="tab-balance">
+                    <BalanceSheetPanel forecast={forecast} />
+                  </div>
+                )}
+                {tab === "gl" && forecast && (
+                  <div role="tabpanel" id="panel-gl" aria-labelledby="tab-gl">
+                    <GlPanel forecast={forecast} assumptions={assumptions} onAssumptions={setAssumptions} />
+                  </div>
+                )}
                 {tab === "payables" && forecast && (
                   <div role="tabpanel" id="panel-payables" aria-labelledby="tab-payables">
                     <PayablesPanel ap={forecast.ap} assumptions={assumptions} />

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Card, Disclosure, Field, GhostButton, NumInput, inputClass } from "./ui";
-import type { Assumptions, Bucket, CapexItem, OneTimeItem, OpexLine } from "./types";
+import type { Assumptions, Bucket, CapexItem, Employee, OneTimeItem, OpexLine } from "./types";
 
 const BUCKET_LABELS: Record<Bucket, string> = {
   current: "Not yet due",
@@ -40,10 +40,13 @@ export function AssumptionsEditor({
   value,
   onChange,
   onReset,
+  fromGl = [],
 }: {
   value: Assumptions;
   onChange: (next: Assumptions) => void;
   onReset: () => void;
+  /** Assumption keys whose defaults come from the general ledger. */
+  fromGl?: string[];
 }) {
   const edit = (fn: (draft: Assumptions) => void) => {
     const next = structuredClone(value);
@@ -62,7 +65,7 @@ export function AssumptionsEditor({
       }
     >
       <div className="-mt-1">
-        <Disclosure title="General" defaultOpen>
+        <Disclosure title="General" defaultOpen badge={fromGl.includes("starting_cash") ? "cash from GL" : undefined}>
           <Field label="Forecast start date" hint="Receivables are measured as of this date.">
             <input
               type="date"
@@ -87,7 +90,7 @@ export function AssumptionsEditor({
           </div>
         </Disclosure>
 
-        <Disclosure title="Sales & collections" badge="from data">
+        <Disclosure title="Sales & collections" badge={fromGl.includes("monthly_revenue") ? "from GL + data" : "from data"}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="New invoicing / month">
               <NumInput value={sales.monthly_revenue} min={0} prefix="$" onChange={(n) => edit((d) => void (d.sales.monthly_revenue = n))} />
@@ -119,7 +122,7 @@ export function AssumptionsEditor({
           </div>
         </Disclosure>
 
-        <Disclosure title="Cost of sales & vendors">
+        <Disclosure title="Cost of sales & vendors" badge={fromGl.includes("cogs_pct") ? "from GL" : undefined}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Cost of sales">
               <NumInput value={costs.cogs_pct} min={0} max={100} suffix="% rev" onChange={(n) => edit((d) => void (d.costs.cogs_pct = n))} />
@@ -156,37 +159,167 @@ export function AssumptionsEditor({
           </div>
         </Disclosure>
 
-        <Disclosure title="Payroll & hiring" badge={`${payroll.headcount} people`}>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Headcount">
-              <NumInput value={payroll.headcount} min={0} max={5000} onChange={(n) => edit((d) => void (d.payroll.headcount = Math.round(n)))} />
-            </Field>
-            <Field label="Avg salary / year">
-              <NumInput value={payroll.avg_salary} min={0} prefix="$" onChange={(n) => edit((d) => void (d.payroll.avg_salary = n))} />
-            </Field>
-            <Field label="Taxes & benefits">
-              <NumInput value={payroll.burden_pct} min={0} max={100} suffix="%" onChange={(n) => edit((d) => void (d.payroll.burden_pct = n))} />
-            </Field>
-            <Field label="Raises / year">
-              <NumInput value={payroll.salary_growth_pct_annual} min={-20} max={50} suffix="%" onChange={(n) => edit((d) => void (d.payroll.salary_growth_pct_annual = n))} />
-            </Field>
-          </div>
-          {payroll.hires.map((h, i) => (
-            <Row key={i} name={`hire ${i + 1}`} onRemove={() => edit((d) => void d.payroll.hires.splice(i, 1))}>
-              <div className="grid grid-cols-2 gap-2">
-                <Mini label="Starts in month #">
-                  <NumInput ariaLabel={`Hire ${i + 1} start month`} value={h.month} min={0} max={60} onChange={(n) => edit((d) => void (d.payroll.hires[i].month = Math.round(n)))} />
-                </Mini>
-                <Mini label="New heads">
-                  <NumInput ariaLabel={`Hire ${i + 1} head count`} value={h.count} min={1} max={500} onChange={(n) => edit((d) => void (d.payroll.hires[i].count = Math.max(1, Math.round(n))))} />
-                </Mini>
+        <Disclosure
+          title="Payroll & hiring"
+          badge={payroll.use_roster ? `${payroll.employees.filter((e) => !e.term_date).length} on roster` : `${payroll.headcount} people`}
+        >
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-[#d1d5db]">
+            <input
+              type="checkbox"
+              checked={payroll.use_roster}
+              onChange={(e) => edit((d) => void (d.payroll.use_roster = e.target.checked))}
+              className="mt-0.5 h-4 w-4 accent-[#60a5fa]"
+            />
+            <span>
+              Use the employee roster and pay runs
+              <span className="block text-[11px] text-[#6b7280]">Off: a simple headcount × average salary model.</span>
+            </span>
+          </label>
+
+          {payroll.use_roster ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Pay frequency">
+                  <select
+                    aria-label="Pay frequency"
+                    value={payroll.pay_frequency}
+                    onChange={(e) => edit((d) => void (d.payroll.pay_frequency = e.target.value as Assumptions["payroll"]["pay_frequency"]))}
+                    className={inputClass}
+                  >
+                    <option value="biweekly">Every 2 weeks</option>
+                    <option value="semimonthly">Twice a month</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </Field>
+                <Field label="Next pay date" hint="Biweekly runs repeat from here.">
+                  <input
+                    type="date"
+                    aria-label="Next pay date"
+                    value={payroll.next_pay_date ?? ""}
+                    onChange={(e) => edit((d) => void (d.payroll.next_pay_date = e.target.value || null))}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Employer payroll taxes">
+                  <NumInput value={payroll.employer_tax_pct} min={0} max={60} suffix="%" onChange={(n) => edit((d) => void (d.payroll.employer_tax_pct = n))} />
+                </Field>
+                <Field label="Raises / year">
+                  <NumInput value={payroll.salary_growth_pct_annual} min={-20} max={50} suffix="%" onChange={(n) => edit((d) => void (d.payroll.salary_growth_pct_annual = n))} />
+                </Field>
+                <Field label="Raise month" hint="1 = January">
+                  <NumInput value={payroll.raise_month} min={1} max={12} onChange={(n) => edit((d) => void (d.payroll.raise_month = Math.min(12, Math.max(1, Math.round(n)))))} />
+                </Field>
+                <Field label="Bonus month" hint="12 = December">
+                  <NumInput value={payroll.bonus_month} min={1} max={12} onChange={(n) => edit((d) => void (d.payroll.bonus_month = Math.min(12, Math.max(1, Math.round(n)))))} />
+                </Field>
               </div>
-            </Row>
-          ))}
-          <GhostButton onClick={() => edit((d) => void d.payroll.hires.push({ month: 1, count: 1 }))}>+ Add hire</GhostButton>
+              {payroll.employees.map((e, i) => (
+                <Row key={i} name={e.id || `employee ${i + 1}`} onRemove={() => edit((d) => void d.payroll.employees.splice(i, 1))}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Mini label="ID">
+                      <input aria-label={`Employee ${i + 1} id`} value={e.id} maxLength={40} onChange={(ev) => edit((d) => void (d.payroll.employees[i].id = ev.target.value))} className={inputClass} />
+                    </Mini>
+                    <Mini label="Department">
+                      <input aria-label={`Employee ${i + 1} department`} value={e.department} maxLength={60} onChange={(ev) => edit((d) => void (d.payroll.employees[i].department = ev.target.value))} className={inputClass} />
+                    </Mini>
+                  </div>
+                  <div className="mt-2">
+                    <Mini label="Title">
+                      <input aria-label={`Employee ${i + 1} title`} value={e.title} maxLength={80} onChange={(ev) => edit((d) => void (d.payroll.employees[i].title = ev.target.value))} className={inputClass} />
+                    </Mini>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <Mini label="Pay type">
+                      <select aria-label={`Employee ${i + 1} pay type`} value={e.pay_type} onChange={(ev) => edit((d) => void (d.payroll.employees[i].pay_type = ev.target.value as Employee["pay_type"]))} className={inputClass}>
+                        <option value="salary">Salary</option>
+                        <option value="hourly">Hourly</option>
+                      </select>
+                    </Mini>
+                    {e.pay_type === "salary" ? (
+                      <Mini label="Annual salary">
+                        <NumInput ariaLabel={`Employee ${i + 1} salary`} value={e.annual_salary} min={0} prefix="$" onChange={(n) => edit((d) => void (d.payroll.employees[i].annual_salary = n))} />
+                      </Mini>
+                    ) : (
+                      <Mini label="Hourly rate">
+                        <NumInput ariaLabel={`Employee ${i + 1} hourly rate`} value={e.hourly_rate} min={0} prefix="$" onChange={(n) => edit((d) => void (d.payroll.employees[i].hourly_rate = n))} />
+                      </Mini>
+                    )}
+                    {e.pay_type === "hourly" && (
+                      <Mini label="Hours / week">
+                        <NumInput ariaLabel={`Employee ${i + 1} hours`} value={e.hours_per_week} min={0} max={100} onChange={(n) => edit((d) => void (d.payroll.employees[i].hours_per_week = n))} />
+                      </Mini>
+                    )}
+                    <Mini label="Hire date">
+                      <input aria-label={`Employee ${i + 1} hire date`} type="date" value={e.hire_date} onChange={(ev) => ev.target.value && edit((d) => void (d.payroll.employees[i].hire_date = ev.target.value))} className={inputClass} />
+                    </Mini>
+                    <Mini label="Last day (if leaving)">
+                      <input aria-label={`Employee ${i + 1} last day`} type="date" value={e.term_date ?? ""} onChange={(ev) => edit((d) => void (d.payroll.employees[i].term_date = ev.target.value || null))} className={inputClass} />
+                    </Mini>
+                    <Mini label="Bonus">
+                      <NumInput ariaLabel={`Employee ${i + 1} bonus`} value={e.bonus_pct} min={0} max={500} suffix="%" onChange={(n) => edit((d) => void (d.payroll.employees[i].bonus_pct = n))} />
+                    </Mini>
+                    <Mini label="Benefits / month">
+                      <NumInput ariaLabel={`Employee ${i + 1} benefits`} value={e.benefits_monthly} min={0} prefix="$" onChange={(n) => edit((d) => void (d.payroll.employees[i].benefits_monthly = n))} />
+                    </Mini>
+                  </div>
+                </Row>
+              ))}
+              <GhostButton
+                onClick={() =>
+                  edit((d) =>
+                    void d.payroll.employees.push({
+                      id: `E${String(d.payroll.employees.length + 1).padStart(3, "0")}`,
+                      department: d.payroll.employees[0]?.department ?? "General",
+                      title: "New hire",
+                      pay_type: "salary",
+                      annual_salary: 70000,
+                      hourly_rate: 0,
+                      hours_per_week: 40,
+                      hire_date: d.general.as_of,
+                      term_date: null,
+                      bonus_pct: 0,
+                      benefits_monthly: 500,
+                    })
+                  )
+                }
+              >
+                + Add employee
+              </GhostButton>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Headcount">
+                  <NumInput value={payroll.headcount} min={0} max={5000} onChange={(n) => edit((d) => void (d.payroll.headcount = Math.round(n)))} />
+                </Field>
+                <Field label="Avg salary / year">
+                  <NumInput value={payroll.avg_salary} min={0} prefix="$" onChange={(n) => edit((d) => void (d.payroll.avg_salary = n))} />
+                </Field>
+                <Field label="Taxes & benefits">
+                  <NumInput value={payroll.burden_pct} min={0} max={100} suffix="%" onChange={(n) => edit((d) => void (d.payroll.burden_pct = n))} />
+                </Field>
+                <Field label="Raises / year">
+                  <NumInput value={payroll.salary_growth_pct_annual} min={-20} max={50} suffix="%" onChange={(n) => edit((d) => void (d.payroll.salary_growth_pct_annual = n))} />
+                </Field>
+              </div>
+              {payroll.hires.map((h, i) => (
+                <Row key={i} name={`hire ${i + 1}`} onRemove={() => edit((d) => void d.payroll.hires.splice(i, 1))}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Mini label="Starts in month #">
+                      <NumInput ariaLabel={`Hire ${i + 1} start month`} value={h.month} min={0} max={60} onChange={(n) => edit((d) => void (d.payroll.hires[i].month = Math.round(n)))} />
+                    </Mini>
+                    <Mini label="New heads">
+                      <NumInput ariaLabel={`Hire ${i + 1} head count`} value={h.count} min={1} max={500} onChange={(n) => edit((d) => void (d.payroll.hires[i].count = Math.max(1, Math.round(n))))} />
+                    </Mini>
+                  </div>
+                </Row>
+              ))}
+              <GhostButton onClick={() => edit((d) => void d.payroll.hires.push({ month: 1, count: 1 }))}>+ Add hire</GhostButton>
+            </>
+          )}
         </Disclosure>
 
-        <Disclosure title="Operating expenses" badge={`${value.opex.length} lines`}>
+        <Disclosure title="Operating expenses" badge={`${value.opex.length} lines${fromGl.includes("opex") ? " · from GL" : ""}`}>
           {value.opex.map((o, i) => (
             <Row key={i} name={o.name || `expense ${i + 1}`} onRemove={() => edit((d) => void d.opex.splice(i, 1))}>
               <div className="grid grid-cols-[1fr_auto] gap-2">
@@ -226,7 +359,7 @@ export function AssumptionsEditor({
           </GhostButton>
         </Disclosure>
 
-        <Disclosure title="Debt" badge={`${value.loans.length} loans`}>
+        <Disclosure title="Debt" badge={`${value.loans.length} loans${fromGl.includes("loans") ? " · from GL" : ""}`}>
           {value.loans.map((l, i) => (
             <Row key={i} name={l.name || `loan ${i + 1}`} onRemove={() => edit((d) => void d.loans.splice(i, 1))}>
               <input aria-label={`Loan ${i + 1} name`} value={l.name} maxLength={80} onChange={(e) => edit((d) => void (d.loans[i].name = e.target.value))} className={inputClass} placeholder="Name" />
@@ -266,6 +399,9 @@ export function AssumptionsEditor({
             </Field>
             <Field label="Existing depreciation" hint="Per month, assets you own.">
               <NumInput value={value.capex.existing_depreciation_monthly} min={0} prefix="$" onChange={(n) => edit((d) => void (d.capex.existing_depreciation_monthly = n))} />
+            </Field>
+            <Field label="Opening net PP&E" hint="Book value of assets you own (balance sheet).">
+              <NumInput value={value.capex.opening_ppe_net} min={0} prefix="$" onChange={(n) => edit((d) => void (d.capex.opening_ppe_net = n))} />
             </Field>
             <Field label="Growth capex follows sales" hint="Share of a scenario sales change it copies.">
               <NumInput value={Math.round(value.capex.growth_revenue_link * 100)} min={0} max={100} suffix="%" onChange={(n) => edit((d) => void (d.capex.growth_revenue_link = n / 100))} />

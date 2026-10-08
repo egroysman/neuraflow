@@ -173,7 +173,7 @@ def _assumptions(ws, a: Assumptions) -> None:
     ws.cell(row=row, column=1, value="Payroll").font = BOLD
     row += 1
     for key, value in data["payroll"].items():
-        if key == "hires":
+        if key in ("hires", "employees"):
             continue
         ws.cell(row=row, column=1, value=key.replace("_", " "))
         ws.cell(row=row, column=2, value=value)
@@ -202,6 +202,13 @@ def _assumptions(ws, a: Assumptions) -> None:
             row += 1
         row += 1
 
+    table(
+        "Employee roster",
+        ["ID", "Department", "Title", "Pay type", "Annual base", "Hire date", "Term date", "Bonus %", "Benefits / month"],
+        [[e["id"], e["department"], e["title"], e["pay_type"],
+          e["annual_salary"] if e["pay_type"] == "salary" else round(e["hourly_rate"] * e["hours_per_week"] * 52, 2),
+          e["hire_date"], e["term_date"], e["bonus_pct"], e["benefits_monthly"]] for e in data["payroll"]["employees"]],
+    )
     table("Hiring plan", ["Month #", "Heads"], [[h["month"], h["count"]] for h in data["payroll"]["hires"]])
     table(
         "Operating expense lines",
@@ -322,6 +329,74 @@ def _capex(ws, capex_data: Dict[str, Any]) -> None:
     _widths(ws, 30, 16, 10)
 
 
+def _table_sheet(ws, title: str, headers: List[str], rows: List[List[Any]], first_width: float = 30, width: float = 15) -> None:
+    ws["A1"] = title
+    ws["A1"].font = Font(bold=True, size=14)
+    _header(ws, 3, headers)
+    for r, values in enumerate(rows, start=4):
+        for c, value in enumerate(values, start=1):
+            cell = ws.cell(row=r, column=c, value=round(value, 2) if isinstance(value, float) else value)
+            if isinstance(value, (int, float)) and c > 1:
+                cell.number_format = MONEY
+    _widths(ws, first_width, width, len(headers))
+
+
+def _payroll(ws, pr: Dict[str, Any]) -> None:
+    ws["A1"] = "Payroll"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = f"{pr['pay_frequency']} pay runs; cost is accrued by month, cash goes out on pay runs"
+    labels = [f"M{i + 1}" for i in range(len(pr["monthly"]))]
+    _header(ws, 4, ["Accrued cost"] + labels + ["Total"])
+    r = 5
+    for dept, vals in pr["by_department"].items():
+        for c, v in enumerate([dept] + list(vals) + [sum(vals)], start=1):
+            cell = ws.cell(row=r, column=c, value=round(v, 2) if c > 1 else v)
+            if c > 1:
+                cell.number_format = MONEY
+        r += 1
+    for label, vals in (("Total payroll cost", pr["monthly"]), ("  of which bonuses", pr["bonus"]), ("  of which benefits", pr["benefits"])):
+        for c, v in enumerate([label] + list(vals) + [sum(vals)], start=1):
+            cell = ws.cell(row=r, column=c, value=round(v, 2) if c > 1 else v)
+            cell.font = BOLD if label.startswith("Total") else Font()
+            if c > 1:
+                cell.number_format = MONEY
+        r += 1
+    ws.cell(row=r, column=1, value="Headcount (end of month)")
+    for c, v in enumerate(pr["headcount"], start=2):
+        ws.cell(row=r, column=c, value=v)
+    r += 2
+    _header(ws, r, ["Pay run date", "Gross wages", "Employer tax", "Total cash", "Employees paid"])
+    r += 1
+    for run in pr["runs"]:
+        for c, v in enumerate([run["date"], run["gross"], run["employer_tax"], run["total"], run["employees"]], start=1):
+            cell = ws.cell(row=r, column=c, value=round(v, 2) if isinstance(v, float) else v)
+            if c in (2, 3, 4):
+                cell.number_format = MONEY
+        r += 1
+    _widths(ws, 30, 13, len(labels) + 2)
+
+
+def _balance_sheet(ws, bs: Dict[str, Any]) -> None:
+    cols = [bs["opening"]] + bs["months"]
+    lines = [("Cash", "cash"), ("Receivables", "receivables"), ("Property & equipment (net)", "ppe_net"), ("Total assets", "total_assets"),
+             ("Payables", "payables"), ("Accrued payroll", "accrued_payroll"), ("Taxes payable", "taxes_payable"), ("Debt", "debt"),
+             ("Total liabilities", "total_liabilities"), ("Equity", "equity"), ("Total liabilities + equity", "total_liabilities_equity"),
+             ("Check (assets - liabilities - equity)", "check")]
+    _table_sheet(ws, "Projected balance sheet", ["USD"] + [c["label"] for c in cols],
+                 [[label] + [c[key] for c in cols] for label, key in lines], 34, 13)
+    ws.cell(row=len(lines) + 5, column=1, value="Receivables not expected to be collected (existing)")
+    ws.cell(row=len(lines) + 5, column=2, value=round(bs["memo"]["existing_ar_expected_uncollectible"], 2)).number_format = MONEY
+
+
+def _gl(ws, g: Dict[str, Any]) -> None:
+    rows = []
+    for t in g["timeline"]:
+        rows.append([t["label"], t["actual_revenue"], t["actual_costs"], t["actual_pretax"],
+                     t["forecast_revenue"], t["forecast_costs"], t["forecast_pretax"]])
+    _table_sheet(ws, "Actuals (general ledger) vs forecast", ["Month", "Actual revenue", "Actual costs", "Actual pre-tax",
+                                                              "Forecast revenue", "Forecast costs", "Forecast pre-tax"], rows, 18, 16)
+
+
 def _scenarios(ws, result: Dict[str, Any]) -> None:
     ws["A1"] = "Scenario comparison: ending cash by month"
     ws["A1"].font = Font(bold=True, size=14)
@@ -396,6 +471,12 @@ def build_xlsx(result: Dict[str, Any], assumptions: Assumptions) -> bytes:
     _ar(wb.create_sheet("Receivables"), result["ar"])
     _ap(wb.create_sheet("Payables"), result["ap"])
     _capex(wb.create_sheet("Capex"), result["capex"])
+    if result.get("payroll"):
+        _payroll(wb.create_sheet("Payroll"), result["payroll"])
+    if result.get("balance_sheet"):
+        _balance_sheet(wb.create_sheet("Balance Sheet"), result["balance_sheet"])
+    if result.get("gl"):
+        _gl(wb.create_sheet("GL vs Forecast"), result["gl"])
     _assumptions(wb.create_sheet("Assumptions"), assumptions)
     buffer = io.BytesIO()
     wb.save(buffer)
