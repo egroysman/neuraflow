@@ -272,13 +272,19 @@ const SLIDER_LIST: Slider[] = [
 export const SLIDER_BY_KEY = Object.fromEntries(SLIDER_LIST.map((s) => [s.key, s])) as Record<keyof Adjustments, Slider>;
 
 /** Every lever lives on exactly one tab. */
-const TAB_WHATIFS: Record<TabId, { title: string; keys: (keyof Adjustments)[]; groups: WhatIfGroup[]; note: string }> = {
+export const TAB_WHATIFS: Record<TabId, { title: string; keys: (keyof Adjustments)[]; groups: WhatIfGroup[]; note: string }> = {
   forecast: { title: "What-ifs: the business", keys: ["revenue_change_pct", "growth_change_pct_pts", "opex_change_pct"], groups: ["operations"], note: "Sales level, growth and overhead. Each other tab has its own levers." },
   receivables: {
     title: "What-ifs: receivables",
     keys: ["collection_delay_days", "past_due_delay_days", "top_customer_delay_days", "collectability_change_pts", "extra_bad_debt_pct"],
     groups: ["ar"],
     note: "How fast and how fully customers pay.",
+  },
+  credit: {
+    title: "What-ifs: credit scores",
+    keys: [],
+    groups: [],
+    note: "No sliders here: scores are measured from how customers actually paid. To test slower payment, use the Receivables tab.",
   },
   payroll: {
     title: "What-ifs: payroll",
@@ -495,6 +501,12 @@ const RISK_STYLE = {
   High: "bg-[#3b1219] text-[#f87171]",
 } as const;
 
+export const BAND_STYLE = {
+  "Low risk": "bg-[#052e22] text-[#34d399]",
+  Watch: "bg-[#3a2a0b] text-[#fbbf24]",
+  "High risk": "bg-[#3b1219] text-[#f87171]",
+} as const;
+
 const AGING_COLORS = ["#34d399", "#a3e635", "#fbbf24", "#fb923c", "#f87171", "#b91c1c"];
 
 export function ReceivablesPanel({
@@ -540,7 +552,7 @@ export function ReceivablesPanel({
           <caption className="sr-only">Largest customers by open receivables</caption>
           <thead>
             <tr className="bg-[#0b0b0f] text-xs text-[#9ca3af]">
-              {["Customer", "Open invoices", "Open amount", "Expected in horizon", "Avg days to pay", "Oldest past due", "Risk"].map((h, i) => (
+              {["Customer", "Open invoices", "Open amount", "Expected in horizon", "Avg days to pay", "Oldest past due", "Credit score"].map((h, i) => (
                 <th key={h} scope="col" className={`px-3 py-2 font-medium whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>
                   {h}
                 </th>
@@ -571,7 +583,13 @@ export function ReceivablesPanel({
                 <td className="px-3 py-1.5 text-right tabular-nums">{c.avg_days_to_pay === null ? "–" : c.avg_days_to_pay.toFixed(0)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{c.oldest_days_past_due > 0 ? `${c.oldest_days_past_due} d` : "Not due"}</td>
                 <td className="px-3 py-1.5 text-right">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${RISK_STYLE[c.risk]}`}>{c.risk}</span>
+                  {c.credit_score !== null && c.credit_band ? (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${BAND_STYLE[c.credit_band]}`} title={`${c.credit_band}. Past-due risk label: ${c.risk}`}>
+                      {c.credit_score.toFixed(0)} · {c.credit_band}
+                    </span>
+                  ) : (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${RISK_STYLE[c.risk]}`}>{c.risk}</span>
+                  )}
                 </td>
               </tr>
             ))}

@@ -495,7 +495,7 @@ def test_api_xlsx_export_has_expected_sheets(client):
     r = client.post("/cashflow/export?format=xlsx", json={"assumptions": a, "scenario": "best"})
     assert r.status_code == 200
     wb = load_workbook(io.BytesIO(r.content))
-    assert wb.sheetnames == ["Summary", "Projections", "Monthly", "13-Week", "P&L", "Scenarios", "Receivables", "Payables", "Capex", "Payroll", "Balance Sheet", "GL vs Forecast", "Assumptions"]
+    assert wb.sheetnames == ["Summary", "Projections", "Monthly", "13-Week", "P&L", "Scenarios", "Receivables", "Credit Scores", "Payables", "Capex", "Payroll", "Balance Sheet", "GL vs Forecast", "Assumptions"]
     assert wb["Summary"]["B3"].value == "Best case"
 
 

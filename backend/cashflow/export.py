@@ -435,6 +435,11 @@ def _projections(ws, result: Dict[str, Any]) -> None:
     _widths(ws, 30, 18, len(headers))
 
 
+def _credit(ws, customers: List[Dict[str, Any]]) -> None:
+    rows = [[c["customer_id"], c.get("credit_score"), c.get("credit_band") or "", c["open_amount"], c["oldest_days_past_due"], c["risk"]] for c in customers]
+    _table_sheet(ws, "Customer payment-behavior scores (0-100, higher is safer)", ["Customer", "Score", "Band", "Open amount", "Oldest days past due", "Simple risk label"], rows, 14, 18)
+
+
 def _scenarios(ws, result: Dict[str, Any]) -> None:
     ws["A1"] = "Scenario comparison: ending cash by month"
     ws["A1"].font = Font(bold=True, size=14)
@@ -508,6 +513,7 @@ def build_xlsx(result: Dict[str, Any], assumptions: Assumptions) -> bytes:
     _pnl(wb.create_sheet("P&L"), result["pnl"])
     _scenarios(wb.create_sheet("Scenarios"), result)
     _ar(wb.create_sheet("Receivables"), result["ar"])
+    _credit(wb.create_sheet("Credit Scores"), result["ar"]["customers"])
     _ap(wb.create_sheet("Payables"), result["ap"])
     _capex(wb.create_sheet("Capex"), result["capex"])
     if result.get("payroll"):

@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import ValidationError
 
+from . import credit as credit_mod
 from .models import Adjustments
 
 # Which what-if group each tab owns (a tab's assistant may only suggest its own levers).
@@ -26,6 +27,7 @@ TAB_GROUPS = {
     "balance": "financing",
     "gl": "ledger",
     "trends": "trends",
+    "credit": None,  # scores come from payment history; there are no sliders
 }
 TAB_ROLES = {
     "forecast": "the overall cash flow forecast (cash balance, P&L, scenarios, alerts)",
@@ -35,6 +37,7 @@ TAB_ROLES = {
     "capex": "capital purchases (planned items, financing, interest and depreciation)",
     "balance": "the balance sheet (cash, receivables, payables, debt and equity)",
     "gl": "the general ledger (trial balance, actuals versus forecast, and how the ledger ties to invoices and bills)",
+    "credit": "customer payment-behavior credit scores (score, risk band, reasons) and the back-test that checks the score against what customers did next",
     "trends": "trends in the business history (revenue, collections, seasonality and customer concentration)",
 }
 # Sliders the assistant may suggest on the receivables tab (kept for compatibility).
@@ -42,7 +45,8 @@ SUGGESTIBLE = list(Adjustments.GROUPS["ar"])
 
 
 def suggestible(tab: str) -> List[str]:
-    return list(Adjustments.GROUPS[TAB_GROUPS[tab]])
+    group = TAB_GROUPS[tab]
+    return list(Adjustments.GROUPS[group]) if group else []
 MODEL = os.getenv("AR_ASSISTANT_MODEL", "gpt-4.1-mini")
 MAX_HISTORY = 8
 
@@ -120,7 +124,7 @@ def _r(x: Any, n: int = 0) -> Any:
 
 def _base(result: Dict[str, Any], tab: str) -> Dict[str, Any]:
     k = result["kpis"]["monthly"]
-    return {
+    out = {
         "as_of": str(result["as_of"]),
         "scenario": result["scenario_label"],
         "active_what_ifs": {n: v for n, v in result["effective_adjustments"].items() if v},
@@ -132,8 +136,10 @@ def _base(result: Dict[str, Any], tab: str) -> Dict[str, Any]:
             "first_below_minimum_date": str(k["first_below_min_date"]) if k.get("first_below_min_date") else None,
             "first_negative_date": str(k["first_negative_date"]) if k["first_negative_date"] else None,
         },
-        f"impact_of_{TAB_GROUPS[tab]}_what_ifs": result["whatif_impact"][TAB_GROUPS[tab]],
     }
+    if TAB_GROUPS[tab]:
+        out[f"impact_of_{TAB_GROUPS[tab]}_what_ifs"] = result["whatif_impact"][TAB_GROUPS[tab]]
+    return out
 
 
 def _ctx_forecast(result, data):
@@ -281,7 +287,39 @@ def _ctx_trends(result, data):
     return ctx
 
 
+def _ctx_credit(result, data):
+    scores = data.get("credit") or []
+    ctx = _base(result, "credit")
+    ctx["scoring_method"] = (
+        "Score 0-100 (higher is safer) from payment history only: "
+        + ", ".join(f"{credit_mod.LABELS[k].lower()} ({w * 100:.0f}%)" for k, w in credit_mod.WEIGHTS.items())
+        + f". Few payments pull the score toward {credit_mod.PRIOR_SCORE:.0f}. Bands: Low risk 70+, Watch 40-69, High risk under 40."
+    )
+    ctx["portfolio"] = data.get("credit_summary")
+    ctx["customers"] = [
+        {k: c[k] for k in ("customer_id", "score", "band", "confidence", "observations", "avg_days_late", "late_rate_pct", "trend_days", "open_amount", "past_due_amount", "oldest_days_past_due", "reasons")}
+        for c in scores
+    ]
+    v = data.get("validation")
+    if v and v.get("available"):
+        ctx["back_test"] = {
+            "settings": v["params"],
+            "sample": v["sample"],
+            "auc": v["auc"],
+            "simple_rule_baselines": v["baselines"],
+            "ingredient_auc": [{"ingredient": c["label"], "auc": c["auc"]} for c in v["components"]],
+            "bands": [{k: b[k] for k in ("band", "invoices", "late_rate", "ci_low", "ci_high", "lift")} for b in v["bands"]],
+            "findings": v["findings"],
+            "caveat": v.get("caveat"),
+        }
+    focus = data.get("focus")
+    if focus:
+        ctx["selected_customer"] = next((c for c in scores if c["customer_id"] == focus), None)
+    return ctx
+
+
 CONTEXTS = {
+    "credit": _ctx_credit,
     "forecast": _ctx_forecast,
     "payroll": _ctx_payroll,
     "payables": _ctx_payables,
@@ -309,13 +347,16 @@ def build_prompt(context: Dict[str, Any], message: str, history: List[Dict[str, 
         lo = next((m.ge for m in field.metadata if hasattr(m, "ge")), None)
         hi = next((m.le for m in field.metadata if hasattr(m, "le")), None)
         bounds[name] = {"min": lo, "max": hi, "meaning": field.description}
+    suggest_text = (
+        f"If a what-if would help the user see the effect of something, you may suggest slider settings, using ONLY these fields and ranges:\n{json.dumps(bounds)}\nNever suggest more than three settings. Omit \"suggested_whatifs\" when none would help."
+        if bounds
+        else 'This tab has no what-if sliders, so always return "suggested_whatifs" as {}.'
+    )
     return f"""You are the assistant for the {tab} tab of a cash flow model; this tab covers {TAB_ROLES[tab]}. Answer using ONLY the data below, which is exactly what the user sees on screen and in the loaded data behind it.
 Be concrete: name customers, vendors, employees, accounts, dollar amounts and dates from the data. If the data cannot answer, say what is missing. Do not invent names, numbers or contact details. If the question belongs on another tab, say which tab.
 Write 1 to 3 short plain paragraphs. No markdown tables and no JSON inside the answer.
 
-If a what-if would help the user see the effect of something, you may suggest slider settings, using ONLY these fields and ranges:
-{json.dumps(bounds)}
-Never suggest more than three settings. Omit "suggested_whatifs" when none would help.
+{suggest_text}
 
 Data:
 {json.dumps(context, default=str)}
