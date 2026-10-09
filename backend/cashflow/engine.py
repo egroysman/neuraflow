@@ -481,6 +481,7 @@ def run_model(
         g.min_cash,
         lambda i, start: f"Wk {i + 1}",
     )
+    extras["projections"] = standard_projections(events, g.as_of, horizon_end, start_cash, g.min_cash)
     return ModelRun(
         assumptions=a,
         adjustments=adj,
@@ -494,6 +495,76 @@ def run_model(
         kpis_weekly=compute_kpis(events, weekly, start_cash, g.min_cash),
         extras=extras,
     )
+
+
+PROJECTION_DAYS = [30, 60, 90, 180, 365]
+PROJECTION_LABELS = {30: "30 days", 60: "60 days", 90: "90 days", 180: "180 days", 365: "1 year"}
+
+
+def standard_projections(
+    events: List[Event],
+    as_of: dt.date,
+    horizon_end: dt.date,
+    starting_cash: float,
+    min_cash: float,
+) -> List[Dict[str, Any]]:
+    """Cash position at the standard checkpoints: 30, 60, 90, 180 days and 1 year.
+
+    Computed from the same dated events as everything else, so each checkpoint
+    agrees with the weekly and monthly views. A checkpoint past the model's
+    horizon is flagged ``complete: False`` rather than guessed.
+    """
+    out: List[Dict[str, Any]] = []
+    section_of = {k: s for k, _, s in CATEGORIES}
+    for days in PROJECTION_DAYS:
+        end = as_of + dt.timedelta(days=days)
+        window = [e for e in events if as_of <= e.date < end]
+        by_day: Dict[dt.date, float] = {}
+        cats = {k: 0.0 for k in CATEGORY_KEYS}
+        sections = {s: 0.0 for s in SECTIONS}
+        for e in window:
+            by_day[e.date] = by_day.get(e.date, 0.0) + e.amount
+            cats[e.category] += e.amount
+            sections[section_of[e.category]] += e.amount
+        balance = starting_cash
+        lowest, lowest_date = balance, as_of
+        first_negative: Optional[dt.date] = None
+        first_below_min: Optional[dt.date] = as_of if balance < min_cash else None
+        for day in sorted(by_day):
+            balance += by_day[day]
+            if balance < lowest:
+                lowest, lowest_date = balance, day
+            if balance < 0 and first_negative is None:
+                first_negative = day
+            if balance < min_cash and first_below_min is None:
+                first_below_min = day
+        cash_in = sum(e.amount for e in window if e.amount > 0)
+        cash_out = -sum(e.amount for e in window if e.amount < 0)
+        net = balance - starting_cash
+        out.append(
+            {
+                "days": days,
+                "label": PROJECTION_LABELS[days],
+                "end_date": end,
+                "complete": end <= horizon_end,
+                "starting_cash": starting_cash,
+                "ending_cash": balance,
+                "net_cash_flow": net,
+                "cash_in": cash_in,
+                "cash_out": cash_out,
+                "operating": sections["operating"],
+                "investing": sections["investing"],
+                "financing": sections["financing"],
+                "lowest_balance": lowest,
+                "lowest_balance_date": lowest_date,
+                "first_below_min_date": first_below_min,
+                "first_negative_date": first_negative,
+                "avg_monthly_burn": (-net / (days / 30.4375)) if net < 0 else 0.0,
+                "funding_gap": max(0.0, min_cash - lowest),
+                "categories": cats,
+            }
+        )
+    return out
 
 
 def _money(value: float) -> str:
@@ -569,6 +640,8 @@ def forecast(
             "ending_cash": other.kpis_monthly["ending_cash"],
             "lowest_balance": other.kpis_monthly["lowest_balance"],
             "first_negative_date": other.kpis_monthly["first_negative_date"],
+            "projection_end_cash": [p["ending_cash"] for p in other.extras["projections"]],
+            "projection_lowest": [p["lowest_balance"] for p in other.extras["projections"]],
         }
 
     g = a.general
@@ -590,6 +663,7 @@ def forecast(
         "weekly": run.weekly,
         "pnl": run.pnl,
         "kpis": {"monthly": run.kpis_monthly, "weekly": run.kpis_weekly},
+        "projections": run.extras["projections"],
         "alerts": build_alerts(run, aging),
         "comparison": comparison,
         "ap": ap.summarize_ap(

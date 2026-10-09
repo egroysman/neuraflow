@@ -154,6 +154,21 @@ def _ctx_forecast(result, data):
         {k: _r(v) if k != "label" else v for k, v in row.items() if k in ("label", "revenue", "cogs", "payroll", "opex", "depreciation", "interest", "pretax_profit")}
         for row in result["pnl"]
     ]
+    ctx["standard_projections"] = [
+        {
+            "window": p["label"],
+            "ends_on": str(p["end_date"]),
+            "ending_cash": _r(p["ending_cash"]),
+            "net_change": _r(p["net_cash_flow"]),
+            "cash_in": _r(p["cash_in"]),
+            "cash_out": _r(p["cash_out"]),
+            "lowest_balance": _r(p["lowest_balance"]),
+            "lowest_balance_date": str(p["lowest_balance_date"]),
+            "first_below_minimum": str(p["first_below_min_date"]) if p["first_below_min_date"] else None,
+            "beyond_model_horizon": not p["complete"],
+        }
+        for p in result["projections"]
+    ]
     ctx["scenarios"] = {
         name: {"ending_cash": _r(c["ending_cash"]), "lowest_balance": _r(c["lowest_balance"]), "goes_negative": bool(c["first_negative_date"])}
         for name, c in result["comparison"].items()
