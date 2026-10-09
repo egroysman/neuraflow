@@ -33,13 +33,22 @@ def load_gl() -> Optional[Dict[str, Any]]:
     accounts, journal = _read(acc), _read(jr)
     if not accounts or not journal:
         return None
+    if jr == HERE / "neuraflow_gl_journal.csv":
+        from . import sample
+
+        journal = sample.shift_each(journal, ["Date"])
     return {"accounts": accounts, "journal": journal}
 
 
 def load_payroll_rows() -> List[Dict[str, Any]]:
     env = os.getenv("DEFAULT_PAYROLL_CSV_PATH")
     path = Path(env) if env and Path(env).exists() else HERE / "neuraflow_payroll.csv"
-    return _read(path)
+    rows = _read(path)
+    if path == HERE / "neuraflow_payroll.csv":
+        from . import sample
+
+        rows = sample.shift_each(rows, ["HireDate", "TermDate"])
+    return rows
 
 
 def _d(s: str) -> dt.date:

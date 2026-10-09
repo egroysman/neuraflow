@@ -77,3 +77,7 @@ A small ML framework runs behind the scenes on the structured data (`backend/mlf
 **Endpoints.** `GET /cashflow/ml/overview`, `POST /cashflow/ml/retrain`, `GET /cashflow/ml/predictions/open-invoices?limit=`.
 
 **Reading the results.** On the bundled sample data no model beats its simple rule (the sample is synthetic with two payer types, and some tests have few rows). That is shown on the page as is. Real data is where this gets decided.
+
+## Sample data dates
+
+The bundled sample was cut on 2026-04-09. So the forecast does not start in the past, the sample's invoices, bills, ledger and payroll dates are moved forward by whole calendar months until they end in the current month. Gaps inside each record stay exact, so payment behavior is unchanged. Only the bundled sample moves; uploads, `DEFAULT_*_CSV_PATH` files and databases never do. Set `SAMPLE_REBASE=off` to use the dates as cut.

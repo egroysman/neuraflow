@@ -71,6 +71,10 @@ def load_invoice_rows() -> List[Dict[str, Any]]:
         if callable(reader):
             rows = reader()
             if rows:
+                from . import sample
+
+                if Path(str(getattr(source, "default_csv_path", "") or "")).name == "neuraflow_invoices.csv":
+                    return sample.shift_rows(rows, "InvoiceDate", sample.INVOICE_OTHERS)
                 return list(rows)
     except Exception:
         pass
@@ -81,7 +85,12 @@ def load_invoice_rows() -> List[Dict[str, Any]]:
     if not path.exists():
         return []
     with open(path, newline="") as handle:
-        return list(csv.DictReader(handle))
+        rows = list(csv.DictReader(handle))
+    if path == fallback:
+        from . import sample
+
+        rows = sample.shift_rows(rows, "InvoiceDate", sample.INVOICE_OTHERS)
+    return rows
 
 
 @dataclass
