@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { askAssistant, type ForecastBody } from "./lib";
-import { SLIDER_BY_KEY, fmtSlider } from "./Panels";
+import { SLIDER_BY_KEY, TAB_WHATIFS, fmtSlider } from "./Panels";
 import { Card } from "./ui";
 import type { Adjustments, TabId } from "./types";
 
@@ -11,6 +11,7 @@ type Msg = { role: "user" | "assistant"; content: string; suggestions?: Partial<
 const STARTERS: Record<TabId, string[]> = {
   forecast: ["When does cash get tight, and why?", "What are the biggest drivers of cash this year?", "How do the best and worst cases compare?", "What should I change to stay above my minimum?"],
   receivables: ["Who should I chase first?", "Which customers are most likely to pay late?", "What happens if my largest customer pays 30 days late?", "Why is cash from customers lower in some months?"],
+  credit: ["Which customers are my biggest credit risks?", "Why does this customer score low?", "How much can I trust this score?", "What would improve the score for my slowest payers?"],
   payroll: ["Which month has the highest payroll cost and why?", "What does payroll cost by department?", "What happens if we hire 3 more people?", "How much do bonuses and benefits add?"],
   payables: ["Which vendors should I pay first?", "Which bills are overdue?", "What happens if I pay vendors 10 days later?", "Which vendor is the biggest cash risk?"],
   capex: ["What are my biggest purchases and when do they land?", "What does financing cost me in interest?", "What if I delay purchases 3 months?", "How much cash do purchases use this year?"],
@@ -22,6 +23,7 @@ const STARTERS: Record<TabId, string[]> = {
 const TITLES: Record<TabId, string> = {
   forecast: "Ask about your forecast",
   receivables: "Ask about your receivables",
+  credit: "Ask about credit scores",
   payroll: "Ask about payroll",
   payables: "Ask about payables",
   capex: "Ask about capex",
@@ -30,7 +32,7 @@ const TITLES: Record<TabId, string> = {
   trends: "Ask about trends",
 };
 
-const FOCUSABLE: Partial<Record<TabId, string>> = { receivables: "customer", payables: "vendor" };
+const FOCUSABLE: Partial<Record<TabId, string>> = { receivables: "customer", credit: "customer", payables: "vendor" };
 
 export function TabAssistant({
   tab,
@@ -68,7 +70,7 @@ export function TabAssistant({
     try {
       const reply = await askAssistant({ message, history, tab, focus, forecast: body });
       const suggestions = Object.fromEntries(
-        Object.entries(reply.suggested_whatifs).filter(([k]) => k in SLIDER_BY_KEY)
+        Object.entries(reply.suggested_whatifs).filter(([k]) => (TAB_WHATIFS[tab].keys as string[]).includes(k))
       ) as Partial<Record<keyof Adjustments, number>>;
       setMessages((m) => [...m, { role: "assistant", content: reply.answer, suggestions }]);
       setFollowUps(reply.follow_ups.slice(0, 3));

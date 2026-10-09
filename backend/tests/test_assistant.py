@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from cashflow import ap, ar, assistant, engine, gl
+from cashflow import ap, ar, assistant, credit as credit_mod, engine, gl
 from cashflow.models import Adjustments, ForecastRequest
 from cashflow.router import router
 
@@ -134,7 +134,9 @@ ALL_TABS = list(assistant.TAB_GROUPS)
 
 def tab_data(result):
     inv, bills = ar.parse_invoices(ROWS), ap.parse_bills(ap.load_bill_rows())
-    return {"invoices": inv, "bills": bills, "gl": gl.overview(result["as_of"], inv, bills),
+    scores = credit_mod.score_customers(inv, ar.snapshot_date(inv))
+    return {"credit": scores, "credit_summary": credit_mod.portfolio_summary(scores), "validation": credit_mod.backtest(inv),
+            "invoices": inv, "bills": bills, "gl": gl.overview(result["as_of"], inv, bills),
             "trends": trends_mod.build_trends(inv, bills, ar.snapshot_date(inv)), "focus": None}
 
 
@@ -144,7 +146,9 @@ def test_every_tab_builds_a_context_with_its_own_impact(tab):
     ctx = assistant.build_tab_context(tab, result, tab_data(result))
     group = assistant.TAB_GROUPS[tab]
     key = "impact_of_receivables_what_ifs" if tab == "receivables" else f"impact_of_{group}_what_ifs"
-    assert key in ctx and ctx["cash"]["starting"] == round(result["kpis"]["monthly"]["starting_cash"])
+    assert tab == "credit" or key in ctx
+    assert tab != "credit" or ("customers" in ctx and "back_test" in ctx)
+    assert ctx["cash"]["starting"] == round(result["kpis"]["monthly"]["starting_cash"])
     json.dumps(ctx, default=str)
 
 
@@ -162,6 +166,9 @@ def test_context_reflects_loaded_data():
 
 @pytest.mark.parametrize("tab", ALL_TABS)
 def test_suggestions_limited_to_the_tabs_own_levers(tab):
+    if tab == "credit":
+        assert assistant.suggestible(tab) == [] and assistant.validate_suggestions({"extra_hires": 1}, tab) == {}
+        return
     own = assistant.suggestible(tab)[0]
     other = next(n for t in ALL_TABS if t != tab for n in assistant.suggestible(t))
     out = assistant.validate_suggestions({own: 0, other: 1}, tab)
@@ -171,11 +178,13 @@ def test_suggestions_limited_to_the_tabs_own_levers(tab):
 
 @pytest.mark.parametrize("tab", ALL_TABS)
 def test_endpoint_per_tab(client, fake, tab):
-    calls = fake({"answer": f"ok {tab}", "suggested_whatifs": {assistant.suggestible(tab)[0]: 0}, "follow_ups": ["more?"]})
+    sugg = {assistant.suggestible(tab)[0]: 0} if assistant.suggestible(tab) else {"extra_hires": 1}
+    calls = fake({"answer": f"ok {tab}", "suggested_whatifs": sugg, "follow_ups": ["more?"]})
     r = client.post("/cashflow/assistant", json=payload(tab=tab))
     assert r.status_code == 200
     body = r.json()
-    assert body["answer"] == f"ok {tab}" and assistant.suggestible(tab)[0] in body["suggested_whatifs"]
+    assert body["answer"] == f"ok {tab}"
+    assert (assistant.suggestible(tab)[0] in body["suggested_whatifs"]) if assistant.suggestible(tab) else body["suggested_whatifs"] == {}
     assert TAB_WORDS[tab] in calls[-1]
 
 

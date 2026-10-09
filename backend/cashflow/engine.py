@@ -17,7 +17,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import ap, ar, balance_sheet, capex, gl as gl_mod, payroll as payroll_mod
+from . import ap, ar, balance_sheet, capex, credit as credit_mod, gl as gl_mod, payroll as payroll_mod
 from .models import (
     AP,
     Capex,
@@ -685,12 +685,24 @@ def forecast(
             "expected_in_horizon": expected_in_horizon,
             "expected_haircut": open_total - expected_total,
             "aging": aging,
-            "customers": ar.summarize_customers(
-                run.projected_ar, invoices, g.as_of, horizon_end
+            "customers": _with_scores(
+                ar.summarize_customers(run.projected_ar, invoices, g.as_of, horizon_end),
+                invoices,
+                g.as_of,
             ),
         },
     }
     return result
+
+
+def _with_scores(customers: List[Dict[str, Any]], invoices, as_of: dt.date) -> List[Dict[str, Any]]:
+    """Attach each customer's payment-behavior score (known as of the start date) to the receivables table."""
+    scores = {s["customer_id"]: s for s in credit_mod.score_customers(invoices, as_of)}
+    for row in customers:
+        s = scores.get(row["customer_id"])
+        row["credit_score"] = s["score"] if s else None
+        row["credit_band"] = s["band"] if s else None
+    return customers
 
 
 def whatif_impact(invoices, a, adj, bills, run) -> Dict[str, Any]:

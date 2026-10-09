@@ -1,4 +1,4 @@
-import type { Adjustments, Assumptions, Defaults, Forecast, GlBaselines, GlOverview, MacroData, Scenario, TabId, Trends } from "./types";
+import type { Adjustments, Assumptions, CreditScores, CreditValidation, Defaults, Forecast, GlBaselines, GlOverview, MacroData, Scenario, TabId, Trends } from "./types";
 
 // Backend base URL. Defaults to the deployed NeuraFlow API (same as the home page); set NEXT_PUBLIC_API_BASE=http://localhost:8000 for local development.
 export const API_BASE = (
@@ -206,3 +206,18 @@ export async function askAssistant(
     follow_ups: Array.isArray(data.follow_ups) ? data.follow_ups.filter((x: unknown) => typeof x === "string") : [],
   };
 }
+
+export async function fetchCredit(asOf?: string, signal?: AbortSignal): Promise<CreditScores> {
+  const res = await fetch(`${API_BASE}/cashflow/credit${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ""}`, { signal });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+export async function fetchCreditValidation(horizonDays: number, lateDays: number, signal?: AbortSignal): Promise<CreditValidation> {
+  const res = await fetch(`${API_BASE}/cashflow/credit/validation?horizon_days=${horizonDays}&late_days=${lateDays}`, { signal });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+export const creditValidationCsvUrl = (horizonDays: number, lateDays: number) =>
+  `${API_BASE}/cashflow/credit/validation/export?horizon_days=${horizonDays}&late_days=${lateDays}`;

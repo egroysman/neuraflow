@@ -8,6 +8,7 @@ import { CapexPanel } from "./CapexPanel";
 import { GlPanel } from "./GlPanel";
 import { PayrollPanel } from "./PayrollPanel";
 import { KpiCards, ScenarioPanel, StatementTable } from "./Panels";
+import { CreditPanel } from "./CreditPanel";
 import { ReceivablesTab } from "./ReceivablesTab";
 import { TabAssistant } from "./TabAssistant";
 import { ProjectionsCard } from "./ProjectionsCard";
@@ -67,6 +68,7 @@ function normalizeAssumptions(saved: Assumptions, defaults: Assumptions): Assump
 const TABS: { id: TabId; label: string }[] = [
   { id: "forecast", label: "Forecast" },
   { id: "receivables", label: "Receivables (AR)" },
+  { id: "credit", label: "Credit Score" },
   { id: "payroll", label: "Payroll" },
   { id: "balance", label: "Balance Sheet" },
   { id: "gl", label: "GL & Actuals" },
@@ -82,7 +84,7 @@ export default function CashFlowApp() {
   const [assumptions, setAssumptions] = useState<Assumptions | null>(null);
   const [scenario, setScenario] = useState<Scenario>("base");
   const [adjustments, setAdjustments] = useState<Adjustments>(NO_ADJUSTMENTS);
-  const [focus, setFocus] = useState<{ receivables: string | null; payables: string | null }>({ receivables: null, payables: null });
+  const [focus, setFocus] = useState<{ receivables: string | null; credit: string | null; payables: string | null }>({ receivables: null, credit: null, payables: null });
   // Tabs whose assistant has been opened stay mounted, so each keeps its conversation.
   const [visited, setVisited] = useState<TabId[]>(["forecast"]);
   const [view, setView] = useState<View>("monthly");
@@ -324,6 +326,15 @@ export default function CashFlowApp() {
                     />
                   </div>
                 )}
+                {tab === "credit" && (
+                  <div role="tabpanel" id="panel-credit" aria-labelledby="tab-credit">
+                    <CreditPanel
+                      asOf={assumptions.general.as_of}
+                      selected={focus.credit}
+                      onSelect={(id) => setFocus((f) => ({ ...f, credit: id }))}
+                    />
+                  </div>
+                )}
                 {tab === "payroll" && forecast && (
                   <div role="tabpanel" id="panel-payroll" aria-labelledby="tab-payroll">
                     <PayrollPanel forecast={forecast} assumptions={assumptions} />
@@ -465,8 +476,8 @@ export default function CashFlowApp() {
                         <TabAssistant
                           tab={t.id}
                           body={{ assumptions, scenario, adjustments }}
-                          focus={t.id === "receivables" ? focus.receivables : t.id === "payables" ? focus.payables : null}
-                          onClearFocus={() => setFocus((f) => ({ ...f, ...(t.id === "receivables" ? { receivables: null } : { payables: null }) }))}
+                          focus={t.id === "receivables" ? focus.receivables : t.id === "credit" ? focus.credit : t.id === "payables" ? focus.payables : null}
+                          onClearFocus={() => setFocus((f) => ({ ...f, ...(t.id === "receivables" ? { receivables: null } : t.id === "credit" ? { credit: null } : { payables: null }) }))}
                           onApply={(changes) => setAdjustments((a) => ({ ...a, ...changes }))}
                         />
                       </div>

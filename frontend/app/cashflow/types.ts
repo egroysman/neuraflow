@@ -253,6 +253,8 @@ export type CustomerRow = {
   avg_days_to_pay: number | null;
   oldest_days_past_due: number;
   risk: "Low" | "Medium" | "High";
+  credit_score: number | null;
+  credit_band: CreditBand | null;
 };
 
 export type Forecast = {
@@ -631,4 +633,53 @@ export const NO_ADJUSTMENTS: Adjustments = {
   new_sales_dso_change_days: 0,
 };
 
-export type TabId = "forecast" | "receivables" | "payroll" | "balance" | "gl" | "payables" | "capex" | "trends";
+export type TabId = "forecast" | "receivables" | "credit" | "payroll" | "balance" | "gl" | "payables" | "capex" | "trends";
+
+export type CreditBand = "Low risk" | "Watch" | "High risk";
+
+export type CreditCustomer = {
+  customer_id: string;
+  score: number;
+  band: CreditBand;
+  confidence: "low" | "medium" | "high";
+  observations: number;
+  paid_invoices: number;
+  components: { key: string; label: string; score: number; weight: number }[];
+  avg_days_late: number;
+  late_rate_pct: number;
+  spread_days: number;
+  trend_days: number | null;
+  open_amount: number;
+  past_due_amount: number;
+  oldest_days_past_due: number;
+  reasons: string[];
+};
+
+export type CreditScores = {
+  as_of: string;
+  customers: CreditCustomer[];
+  summary: {
+    customers: number;
+    average_score: number | null;
+    open_amount: number;
+    bands: { band: CreditBand; customers: number; open_amount: number; open_share_pct: number }[];
+  };
+};
+
+export type CreditValidation =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      caveat?: string;
+      params: { horizon_days: number; late_days: number; step_days: number; min_history: number };
+      data: { first_invoice: string; data_end: string; cutoffs: number; first_cutoff: string; last_cutoff: string };
+      sample: { invoices: number; customers: number; late_invoices: number; base_late_rate: number; censored_excluded: number; thin_history_excluded: number };
+      auc: { value: number | null; ci_low: number | null; ci_high: number | null };
+      baselines: { name: string; auc: number | null }[];
+      components: { key: string; label: string; weight: number; auc: number | null }[];
+      findings: string[];
+      bands: { band: CreditBand; invoices: number; customers: number; late_invoices: number; late_rate: number | null; lift: number | null; ci_low: number | null; ci_high: number | null; share_of_late_dollars: number | null }[];
+      calibration: { group: number; invoices: number; score_low: number; score_high: number; avg_score: number; late_rate: number }[];
+      by_cutoff: { cutoff: string; invoices: number; late_rate: number; auc: number | null }[];
+      method: string[];
+    };

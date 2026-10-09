@@ -4,11 +4,11 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from . import ap, ar, assistant, engine, export, gl, macro, trends
+from . import ap, ar, assistant, credit, engine, export, gl, macro, trends
 from .models import SCENARIO_LABELS, SCENARIO_PRESETS, ForecastRequest
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
@@ -79,6 +79,52 @@ def get_gl(as_of: dt.date | None = None):
     return clean(data) if data else {"available": False}
 
 
+_VALIDATION_CACHE: dict = {}
+SAMPLE_CAVEAT = (
+    "This runs on the bundled sample invoices (25 customers, 755 invoices). They contain two clearly different kinds of payer, "
+    "so they show that the method works, not how it performs on real businesses. A pilot on real customer data is the real test."
+)
+
+
+def _validation(invoices, horizon_days: int, late_days: int) -> dict:
+    """Back-test results, cached because the invoices only change when the data does."""
+    key = (horizon_days, late_days, len(invoices), round(sum(i.amount for i in invoices), 2),
+           max((i.payment_date for i in invoices if i.payment_date), default=None))
+    if key not in _VALIDATION_CACHE:
+        if len(_VALIDATION_CACHE) > 20:
+            _VALIDATION_CACHE.clear()
+        _VALIDATION_CACHE[key] = credit.backtest(invoices, horizon_days=horizon_days, late_days=late_days)
+    result = _VALIDATION_CACHE[key]
+    return result | {"caveat": SAMPLE_CAVEAT}
+
+
+@router.get("/credit")
+def get_credit(as_of: dt.date | None = None):
+    """Payment-behavior score for each customer, using only what was known on the date."""
+    invoices = ar.parse_invoices(ar.load_invoice_rows())
+    when = as_of or ar.snapshot_date(invoices)
+    scores = credit.score_customers(invoices, when)
+    return clean({"as_of": when, "customers": scores, "summary": credit.portfolio_summary(scores)})
+
+
+@router.get("/credit/validation")
+def get_credit_validation(horizon_days: int = Query(90, ge=30, le=180), late_days: int = Query(10, ge=0, le=60)):
+    """Back-test: replay the score at past dates and compare it with what customers did next."""
+    result = _validation(ar.parse_invoices(ar.load_invoice_rows()), horizon_days, late_days)
+    return clean({k: v for k, v in result.items() if k != "records"})
+
+
+@router.get("/credit/validation/export")
+def export_credit_validation(horizon_days: int = Query(90, ge=30, le=180), late_days: int = Query(10, ge=0, le=60)):
+    """Every scored invoice behind the back-test, as CSV, so the numbers can be audited."""
+    result = _validation(ar.parse_invoices(ar.load_invoice_rows()), horizon_days, late_days)
+    return Response(
+        content=credit.records_csv(result),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="neuraflow_credit_backtest.csv"'},
+    )
+
+
 @router.post("/forecast")
 def run_forecast(req: ForecastRequest):
     rows = ar.load_invoice_rows()
@@ -112,7 +158,7 @@ class AssistantRequest(BaseModel):
     history: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
     customer_id: str | None = Field(default=None, max_length=40)  # legacy name for focus
     focus: str | None = Field(default=None, max_length=60)  # customer, vendor, ...
-    tab: Literal["forecast", "receivables", "payroll", "payables", "capex", "balance", "gl", "trends"] = "receivables"
+    tab: Literal["forecast", "receivables", "credit", "payroll", "payables", "capex", "balance", "gl", "trends"] = "receivables"
     forecast: ForecastRequest
 
 
@@ -129,6 +175,11 @@ def tab_assistant(req: AssistantRequest):
     data: dict[str, Any] = {"invoices": invoices, "bills": bills, "focus": req.focus or req.customer_id}
     if req.tab == "gl":
         data["gl"] = gl.overview(as_of, invoices, bills)
+    if req.tab == "credit":
+        scores = credit.score_customers(invoices, as_of)
+        data["credit"] = scores
+        data["credit_summary"] = credit.portfolio_summary(scores)
+        data["validation"] = _validation(invoices, 90, 10)
     if req.tab == "trends":
         data["trends"] = trends.build_trends(invoices, bills, ar.snapshot_date(invoices) or as_of)
     context = assistant.build_tab_context(req.tab, result, data)
