@@ -65,7 +65,12 @@ def load_bill_rows() -> List[Dict[str, Any]]:
     if not path.exists():
         return []
     with path.open(newline="", encoding="utf-8") as fh:
-        return list(csv.DictReader(fh))
+        rows = list(csv.DictReader(fh))
+    if path == fallback:
+        from . import sample
+
+        rows = sample.shift_rows(rows, "BillDate", sample.BILL_OTHERS)
+    return rows
 
 
 def parse_bills(rows: Iterable[Dict[str, Any]]) -> List[Bill]:
