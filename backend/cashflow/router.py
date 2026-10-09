@@ -125,6 +125,30 @@ def export_credit_validation(horizon_days: int = Query(90, ge=30, le=180), late_
     )
 
 
+@router.get("/ml/overview")
+def ml_overview():
+    """Every model behind the scenes: data, out-of-time accuracy against simple rules, drift and the registry."""
+    from mlfw.service import get_service
+
+    return get_service().overview()
+
+
+@router.post("/ml/retrain")
+def ml_retrain():
+    """Retrain every model on the current data and record new versions in the registry."""
+    from mlfw.service import get_service
+
+    return get_service().overview(force=True)
+
+
+@router.get("/ml/predictions/open-invoices")
+def ml_open_invoice_predictions(limit: int = Query(15, ge=1, le=100)):
+    """Shadow predictions for open invoices that are not yet due. They never feed the forecast."""
+    from mlfw.service import get_service
+
+    return get_service().open_invoice_predictions(limit)
+
+
 @router.post("/forecast")
 def run_forecast(req: ForecastRequest):
     rows = ar.load_invoice_rows()

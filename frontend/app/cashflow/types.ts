@@ -683,3 +683,83 @@ export type CreditValidation =
       by_cutoff: { cutoff: string; invoices: number; late_rate: number; auc: number | null }[];
       method: string[];
     };
+
+// ---- Models (shadow-mode ML framework) -------------------------------------
+
+export type MlMetric = { value: number | null; ci: [number, number] | null };
+export type MlVerdict = "beats" | "ties" | "worse" | "unclear";
+export type MlModelResult = {
+  name: string;
+  label: string;
+  is_model: boolean;
+  primary?: boolean;
+  metrics: Record<string, MlMetric>;
+  importances?: { feature: string; weight: number }[];
+  registry_id?: string;
+  version?: number;
+};
+export type MlTask = {
+  task: string;
+  title: string;
+  description: string;
+  feeds: string;
+  kind: "classification" | "regression";
+  mode: string;
+  status: string;
+  notes: string[];
+  data: { rows: number; groups: number; fingerprint: string; features: number; first: string | null; last: string | null; positive_rate?: number };
+  validation: {
+    method: string;
+    folds: { test_start: string; test_end: string; train_rows: number; test_rows: number }[];
+    test_rows: number;
+    primary_metric: string;
+    higher_is_better: boolean;
+  };
+  models: MlModelResult[];
+  baselines: MlModelResult[];
+  comparison: {
+    best_model: string | null;
+    baseline: string | null;
+    metric: string;
+    difference: number | null;
+    ci_low: number | null;
+    ci_high: number | null;
+    verdict: MlVerdict;
+    text: string;
+    also_vs?: { baseline: string; metric: string; difference: number | null; ci_low: number | null; ci_high: number | null; verdict: MlVerdict }[];
+  };
+  drift: { feature: string; psi: number | null; status: string }[];
+  calibration?: { count: number; predicted: number; observed: number }[];
+  learned_weights?: { ingredient: string; current_weight: number; learned_weight: number; coefficient: number }[];
+  findings: string[];
+};
+export type MlRegistryRecord = {
+  id: string;
+  task: string;
+  model: string;
+  label: string;
+  version: number;
+  trained_at: string;
+  rows: number;
+  data_fingerprint: string;
+  train_window?: string[];
+};
+export type MlOverview = {
+  mode: string;
+  generated_at: string;
+  principles: string[];
+  data: { invoices: number; customers: number; bills: number; vendors: number; ledger_months: number; as_of: string; data_end: string; caveat: string };
+  summary: { tasks: number; tested: number; beats: number; ties: number; worse: number; unclear: number };
+  tasks: MlTask[];
+  registry: MlRegistryRecord[];
+};
+export type MlOpenInvoices = {
+  available: boolean;
+  as_of?: string;
+  mode?: string;
+  model?: { late: string; days: string };
+  summary?: { invoices: number; amount: number; expected_late_amount: number; simple_rule_late_amount: number };
+  invoices?: { invoice_id: string; customer_id: string; amount: number; due_date: string; probability_late: number; expected_days_late: number; simple_rule_days_late: number | null; credit_score: number | null }[];
+  note?: string;
+  reason?: string;
+};

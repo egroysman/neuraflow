@@ -61,3 +61,19 @@ Every customer gets a payment-behavior score from 0 to 100 (higher is safer), bu
 **Back-test** (`GET /cashflow/credit/validation`): the score is replayed at past dates every 14 days, using only what was known at each date, and compared with what happened to invoices due in the next 30 to 120 days (late = paid more than N days after due, or still unpaid). It reports ranking accuracy (AUC) with a 95% range from re-sampling whole customers, late rates by band, five equal-sized groups, what each ingredient adds on its own, comparison with simple rules, and plain-language findings generated from the numbers. `GET /cashflow/credit/validation/export` downloads every scored invoice as CSV.
 
 Read the results with care: the bundled sample has two very different kinds of payer, so it shows the method works, not how it performs on real businesses. The ingredient weights were set by judgment and two were lowered after the first back-test, so the numbers are not fully out-of-sample. A pilot on real customer data is the real test. Industry volatility and supply-chain links are not part of the score yet.
+
+## Models (ML framework, shadow mode)
+
+A small ML framework runs behind the scenes on the structured data (`backend/mlfw/`). Open **Models** in the top nav to see it.
+
+**Models.** Will this invoice be paid late (probability), how many days late (regression), learned credit-score weights, vendor-bill timing, and next month's revenue and costs from the ledger.
+
+**Shadow mode.** Nothing here changes the cash flow forecast. Each model is scored against the rule NeuraFlow uses today (customer's average days late, the fixed-weight credit score, trailing 3-month average and so on). A model is only said to "beat" its rule when the 95% bootstrap range of the difference excludes zero. Switching a model into the forecast is a later step, behind a toggle.
+
+**Validation.** Walk-forward: each 30-day test block is scored by a model trained only on rows whose outcome was already known before the block began. Features are point-in-time, so nothing from the future leaks into a prediction.
+
+**Registry.** Every trained model gets a version (`task.model.vN`), the data fingerprint, row count and training window. Files go to `backend/models_store/` (override with `MODEL_STORE_DIR`, gitignored). On Railway the disk is ephemeral, so the registry resets on redeploy; the saving is best-effort and never blocks a request. Mount a volume and point `MODEL_STORE_DIR` at it to keep history.
+
+**Endpoints.** `GET /cashflow/ml/overview`, `POST /cashflow/ml/retrain`, `GET /cashflow/ml/predictions/open-invoices?limit=`.
+
+**Reading the results.** On the bundled sample data no model beats its simple rule (the sample is synthetic with two payer types, and some tests have few rows). That is shown on the page as is. Real data is where this gets decided.

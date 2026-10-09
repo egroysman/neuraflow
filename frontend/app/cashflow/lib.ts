@@ -221,3 +221,21 @@ export async function fetchCreditValidation(horizonDays: number, lateDays: numbe
 
 export const creditValidationCsvUrl = (horizonDays: number, lateDays: number) =>
   `${API_BASE}/cashflow/credit/validation/export?horizon_days=${horizonDays}&late_days=${lateDays}`;
+
+export async function fetchMlOverview(signal?: AbortSignal): Promise<import("./types").MlOverview> {
+  const res = await fetch(`${API_BASE}/cashflow/ml/overview`, { signal });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+export async function retrainModels(): Promise<import("./types").MlOverview> {
+  const res = await fetch(`${API_BASE}/cashflow/ml/retrain`, { method: "POST" });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+export async function fetchMlOpenInvoices(limit = 15, signal?: AbortSignal): Promise<import("./types").MlOpenInvoices> {
+  const res = await fetch(`${API_BASE}/cashflow/ml/predictions/open-invoices?limit=${limit}`, { signal });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
