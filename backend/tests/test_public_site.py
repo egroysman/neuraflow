@@ -175,3 +175,106 @@ def test_a_revoked_demo_key_stops_being_offered(client, monkeypatch):
 def test_public_endpoints_never_set_a_workspace(client, seen):
     client.post("/public/ask", json={"message": "hi"})
     assert client.get("/cashflow/defaults").status_code == 401  # still closed
+
+
+# ------------------------------------------------------------------ email to the operator
+
+from public import notify
+
+
+@pytest.fixture
+def mail(monkeypatch):
+    for k in ("RESEND_API_KEY", "SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "LEAD_NOTIFY_EMAIL", "LEAD_FROM_EMAIL", "SMTP_PORT"):
+        monkeypatch.delenv(k, raising=False)
+    sent = []
+    monkeypatch.setattr(notify, "_send_resend", lambda to, m: sent.append((to, m)))
+    return sent
+
+
+def enable(monkeypatch):
+    monkeypatch.setenv("LEAD_NOTIFY_EMAIL", "owner@example.com")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+
+
+def test_a_request_emails_the_operator_with_a_reply_to(client, mail, monkeypatch):
+    enable(monkeypatch)
+    assert client.post("/public/demo-request", json=LEAD).json() == {"ok": True}
+    assert len(mail) == 1
+    to, m = mail[0]
+    assert to == "owner@example.com" and m["reply_to"] == "pat@example.com"
+    assert "Pat Lee" in m["subject"] and "Acme" in m["subject"] and "Interested" in m["body"] and "pat@example.com" in m["body"]
+    assert client.get("/platform/leads", headers=PLATFORM).json()["leads"][0]["emailed"] is True
+
+
+def test_nothing_is_emailed_unless_fully_configured(client, mail, monkeypatch):
+    monkeypatch.setenv("LEAD_NOTIFY_EMAIL", "owner@example.com")  # recipient but no sending method
+    client.post("/public/demo-request", json=LEAD)
+    assert mail == [] and client.get("/platform/leads", headers=PLATFORM).json()["leads"][0]["emailed"] is None
+    monkeypatch.setenv("RESEND_API_KEY", "k")
+    monkeypatch.setenv("LEAD_NOTIFY_EMAIL", "not an email; bcc: x@y.z")  # a bad recipient is never used
+    client.post("/public/demo-request", json=LEAD)
+    assert mail == []
+
+
+def test_a_failed_email_never_loses_the_request_or_shows_the_visitor_an_error(client, mail, monkeypatch):
+    enable(monkeypatch)
+
+    def boom(to, m):
+        raise RuntimeError("smtp down: secret-token")
+
+    monkeypatch.setattr(notify, "_send_resend", boom)
+    r = client.post("/public/demo-request", json=LEAD)
+    assert r.status_code == 200 and "secret-token" not in r.text
+    lead = client.get("/platform/leads", headers=PLATFORM).json()["leads"][0]
+    assert lead["name"] == "Pat Lee" and lead["emailed"] is False
+
+
+def test_visitor_text_cannot_inject_email_headers(client, mail, monkeypatch):
+    enable(monkeypatch)
+    client.post("/public/demo-request", json={**LEAD, "name": "Pat\r\nBcc: attacker@evil.test", "company": "A\nB"})
+    _, m = mail[0]
+    assert "\n" not in m["subject"] and "\r" not in m["subject"]
+    assert "attacker@evil.test" in m["subject"]  # kept as harmless text on one line
+    assert "\r" not in m["reply_to"] and "\n" not in m["reply_to"]
+
+
+def test_requests_are_refused_rather_than_lost_when_nowhere_to_keep_them(client, mail, monkeypatch):
+    monkeypatch.delenv("WORKSPACES_DIR", raising=False)
+    assert client.get("/public/config").json()["demo_requests"] is False
+    r = client.post("/public/demo-request", json=LEAD)
+    assert r.status_code == 503 and "check back" in r.json()["detail"]
+    enable(monkeypatch)  # an email destination is enough
+    assert client.get("/public/config").json()["demo_requests"] is True
+
+
+def test_smtp_path_uses_starttls_and_login(monkeypatch, mail):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.setenv("LEAD_NOTIFY_EMAIL", "owner@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USERNAME", "me@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "app-password")
+    calls = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout=None):
+            calls.append(("connect", host, port))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def starttls(self, context=None):
+            calls.append(("starttls",))
+
+        def login(self, u, p):
+            calls.append(("login", u))
+
+        def send_message(self, msg):
+            calls.append(("send", msg["To"], msg["Reply-To"], msg["Subject"]))
+
+    monkeypatch.setattr(notify.smtplib, "SMTP", FakeSMTP)
+    assert notify.send_lead({"name": "Pat", "email": "pat@example.com", "company": "", "message": "hi"}) is True
+    assert [c[0] for c in calls] == ["connect", "starttls", "login", "send"] and calls[0][2] == 587
+    assert calls[3][1:3] == ("owner@example.com", "pat@example.com")

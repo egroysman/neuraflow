@@ -185,3 +185,12 @@ The scripts have been tested for safety and shape, but not run against a real Sn
 - **Demo requests.** Stored on the server (in `WORKSPACES_DIR`, so it needs the same persistent volume) and listed on `/platform` under Demo requests, where you can mark them handled or delete them. There is no email sending: check `/platform`. Limits: 5 per visitor per hour, plus a hidden spam trap field. The form tells people their details are used only to reply.
 - **Live demo (optional).** Create a workspace that starts with **Demo** data, issue it a **viewer** key, and set that key as `PUBLIC_DEMO_KEY`. A "Try the live demo" button then appears and signs visitors in read-only on the sample data. An admin key, or a key for a workspace with real data, is refused. Revoke the key to turn the demo off.
 - Don't point `PUBLIC_DEMO_KEY` at anything you wouldn't want the whole internet to read.
+
+### Getting demo requests by email
+
+Set `LEAD_NOTIFY_EMAIL` to where requests should arrive, plus one way to send:
+
+- **Resend (simplest, works on Railway):** create a free account at resend.com using the same email as `LEAD_NOTIFY_EMAIL`, create an API key, and set `RESEND_API_KEY`. With no other setting it sends from `onboarding@resend.dev`, which Resend allows to the account owner's own address. The email's Reply-To is the visitor, so you answer by replying.
+- **SMTP (for example Gmail with an app password):** set `SMTP_HOST` (smtp.gmail.com), `SMTP_USERNAME`, `SMTP_PASSWORD` (an app password, not your login password), and optionally `SMTP_PORT` (587 default, 465 for SSL) and `LEAD_FROM_EMAIL`. Some hosts, including Railway on lower plans, block outgoing SMTP; if emails don't arrive, use Resend.
+
+A failed email never loses the request: it is still stored, and `/platform` shows "Email not sent" on it. Requests are only accepted when they can't silently vanish, meaning an email destination is configured or `WORKSPACES_DIR` is set; otherwise the form says requests aren't open yet.
