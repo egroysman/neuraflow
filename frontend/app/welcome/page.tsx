@@ -34,7 +34,7 @@ export default function Welcome() {
           <a href="#how">How it works</a>
           <a href="#today">Where it is today</a>
           <a href="#ask">Ask a question</a>
-          {session ? <Link href="/cashflow">Open your workspace</Link> : <Link href="/signin">Sign in</Link>}
+          {session ? <Link href="/cashflow">Open your workspace</Link> : <Link href="/signin" className="btn">Log in</Link>}
         </nav>
       </header>
 
@@ -123,7 +123,7 @@ export default function Welcome() {
 
       <footer className="mx-auto flex max-w-[1080px] flex-wrap justify-between gap-3 px-5 py-8 text-sm text-[var(--muted)] sm:px-8">
         <span>NeuraFlow is an early product.</span>
-        <Link href="/signin">Customer sign in</Link>
+        <Link href="/signin">Customer log in</Link>
       </footer>
     </>
   );
