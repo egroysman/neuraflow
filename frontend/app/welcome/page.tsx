@@ -9,7 +9,7 @@ import DemoForm from "./DemoForm";
 import LiveDemo from "./LiveDemo";
 import PaymentTimeline from "./PaymentTimeline";
 
-type Config = { assistant: boolean; live_demo: boolean; suggested_questions: string[] };
+type Config = { demo_requests?: boolean; assistant: boolean; live_demo: boolean; suggested_questions: string[] };
 
 const STEPS = [
   { title: "Connect your data", text: "Upload a CSV or Excel file, point NeuraFlow at Snowflake or Databricks, or drop files in an SFTP folder and let it pick up the newest one on a schedule. Access is read-only." },
@@ -116,7 +116,7 @@ export default function Welcome() {
           <div className="mx-auto max-w-[1080px] px-5 py-16 sm:px-8">
             <h2 className="m-0 text-2xl font-bold">See it on your kind of data</h2>
             <p className="mb-8 mt-2 max-w-[38rem]">Tell us where your invoices live and what you want to learn. We&apos;ll walk through it with you.</p>
-            <DemoForm />
+            {cfg?.demo_requests === false ? <p role="status" className="m-0 max-w-xl text-lg">Demo requests aren&apos;t open yet. Please check back soon.</p> : <DemoForm />}
           </div>
         </section>
       </main>

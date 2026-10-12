@@ -14,10 +14,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from cashflow import assistant as llm
+from . import notify
 from workspaces import context, registry
 from workspaces.deps import _ip
 
@@ -70,9 +71,15 @@ def _demo_viewer() -> Optional[str]:
     return None
 
 
+def requests_open() -> bool:
+    """Demo requests are accepted only if they can't silently vanish: an email goes to the operator, or
+    the server has an explicitly configured storage folder."""
+    return notify.configured() or bool(os.getenv("WORKSPACES_DIR"))
+
+
 @router.get("/config")
 def config():
-    return {"assistant": bool(os.getenv("OPENAI_API_KEY")), "live_demo": _demo_viewer() is not None, "suggested_questions": SUGGESTED}
+    return {"demo_requests": requests_open(), "assistant": bool(os.getenv("OPENAI_API_KEY")), "live_demo": _demo_viewer() is not None, "suggested_questions": SUGGESTED}
 
 
 class Turn(BaseModel):
@@ -125,12 +132,14 @@ class DemoRequest(BaseModel):
 
 
 @router.post("/demo-request")
-def demo_request(b: DemoRequest, request: Request):
+def demo_request(b: DemoRequest, request: Request, background: BackgroundTasks):
     if b.website.strip():  # a bot: pretend it worked
         return {"ok": True}
     _limit("lead", request, 5, 3600, "Too many requests from this network. Please try again later.")
     if not EMAIL.match(b.email.strip()):
         raise HTTPException(400, "Enter a valid email address so we can reply.")
+    if not requests_open():
+        raise HTTPException(503, "Demo requests aren't open yet. Please check back soon.")
     with _LOCK:
         p = _leads_path()
         try:
@@ -139,12 +148,34 @@ def demo_request(b: DemoRequest, request: Request):
             leads = []
         if len(leads) >= 5000:
             raise HTTPException(503, "We can't take more requests right now.")
-        leads.append({"id": "l_" + secrets.token_hex(4), "at": time.time(), "name": b.name.strip(), "email": b.email.strip(),
-                      "company": b.company.strip(), "message": b.message.strip(), "handled": False})
+        lead = {"id": "l_" + secrets.token_hex(4), "at": time.time(), "name": b.name.strip(), "email": b.email.strip(),
+                "company": b.company.strip(), "message": b.message.strip(), "handled": False,
+                "emailed": None if not notify.configured() else False}
+        leads.append(lead)
         tmp = p.with_suffix(".tmp")
         tmp.write_text(json.dumps(leads, indent=1))
         os.replace(tmp, p)
+    if notify.configured():
+        background.add_task(_deliver, dict(lead))  # after the response, so the visitor never waits on email
     return {"ok": True}
+
+
+def _deliver(lead: dict) -> None:
+    ok = notify.send_lead(lead)
+    if not ok:
+        return
+    with _LOCK:
+        p = _leads_path()
+        try:
+            leads = json.loads(p.read_text())
+        except (OSError, ValueError):
+            return
+        for l in leads:
+            if l["id"] == lead["id"]:
+                l["emailed"] = True
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(leads, indent=1))
+        os.replace(tmp, p)
 
 
 @router.get("/demo-access")

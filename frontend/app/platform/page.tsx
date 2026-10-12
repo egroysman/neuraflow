@@ -7,7 +7,7 @@ import { Badge, Card, GhostButton, inputClass } from "../cashflow/ui";
 const TKEY = "nf_platform_token";
 type Ws = { id: string; name: string; starts_with: "empty" | "sample"; status: "active" | "suspended"; created_at: number; keys: number; last_active: number | null; datasets: number };
 type KeyRow = { id: string; role: "admin" | "viewer"; label: string; created_at: number; last_used_at: number | null; revoked: boolean };
-type Lead = { id: string; at: number; name: string; email: string; company: string; message: string; handled: boolean };
+type Lead = { id: string; at: number; name: string; email: string; company: string; message: string; handled: boolean; emailed?: boolean | null };
 type Issued = { wsId: string; wsName: string; role: string; label: string; key: string };
 
 const when = (t?: number | null) => (t ? new Date(t * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "never");
@@ -192,7 +192,7 @@ export default function PlatformPage() {
                 <li key={l.id} className="rounded-xl border border-[#1f2937] p-3 text-sm" data-testid={`lead-${l.id}`}>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="m-0 font-semibold">{l.name}{l.company ? `, ${l.company}` : ""} {l.handled && <Badge tone="good">Handled</Badge>}</p>
+                      <p className="m-0 font-semibold">{l.name}{l.company ? `, ${l.company}` : ""} {l.handled && <Badge tone="good">Handled</Badge>} {l.emailed === false && <Badge tone="warn">Email not sent</Badge>}</p>
                       <p className="m-0 text-xs text-[#9ca3af]"><a href={`mailto:${l.email}`} className="text-[#60a5fa]">{l.email}</a> · {when(l.at)}</p>
                       {l.message && <p className="m-0 mt-1 whitespace-pre-line break-words text-[#d1d5db]">{l.message}</p>}
                     </div>
