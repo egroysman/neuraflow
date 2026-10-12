@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { checkKey, setKey } from "../auth";
@@ -40,7 +41,8 @@ export default function SignIn() {
         {error && <p role="alert" className="m-0 text-sm text-[#fca5a5]">{error}</p>}
         <button type="submit" disabled={!value.trim() || busy} className="w-full rounded-lg bg-[#2563eb] px-3 py-2 text-sm font-medium text-white hover:bg-[#1d4ed8] disabled:opacity-50">{busy ? "Checking…" : "Sign in"}</button>
       </form>
-      <p className="mt-6 text-xs text-[#6b7280]">Lost your key? Ask whoever set up your workspace to issue a new one.</p>
+      <p className="mt-6 text-sm text-[#d1d5db]">No key yet? <Link href="/welcome#demo" className="text-[#60a5fa] underline">Request a demo</Link> and we&apos;ll set you up.</p>
+      <p className="mt-2 text-xs text-[#6b7280]">Lost your key? Ask whoever set up your workspace to issue a new one.</p>
     </main>
   );
 }
