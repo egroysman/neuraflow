@@ -1,5 +1,6 @@
 import { API_BASE } from "../cashflow/lib";
-import type { Analysis, Connection, ConnType, DataStatus, DatasetKey, LastRun, Schedule, Source, SourceObject } from "./types";
+import { authFetch } from "../auth";
+import type { ActivityEvent, Analysis, Connection, ConnType, DataStatus, DatasetKey, LastRun, Schedule, Source, SourceObject } from "./types";
 
 const KEY = "nf_admin_token";
 
@@ -38,7 +39,7 @@ async function call<T>(method: string, path: string, body?: unknown, form?: Form
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}/data${path}`, { method, headers, body: form ?? (body !== undefined ? JSON.stringify(body) : undefined) });
+    res = await authFetch(`${API_BASE}/data${path}`, { method, headers, body: form ?? (body !== undefined ? JSON.stringify(body) : undefined) });
   } catch {
     throw new ApiError("Could not reach the server. Check your connection and try again.", 0);
   }
@@ -84,3 +85,5 @@ export const setSchedule = (key: DatasetKey, s: Schedule) => call<Schedule>("PUT
 export const resetDataset = (key: DatasetKey) => call<{ ok: boolean }>("DELETE", `/${key}`);
 export const resetAll = () => call<{ ok: boolean }>("POST", "/reset");
 export const ghostScan = () => call<{ state: Record<string, { ok: boolean; message: string }> }>("POST", "/ghost/scan");
+export const setGhost = (connection_id: string | null, patterns: Record<string, string>, schedule: string) => call<{ ghost: unknown }>("PUT", "/ghost", { connection_id, patterns, schedule });
+export const getActivity = () => call<{ events: ActivityEvent[] }>("GET", "/activity");

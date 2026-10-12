@@ -13,12 +13,25 @@ from pydantic import BaseModel
 from . import readers, service, store
 from .readers import SourceError
 from .schemas import DATASETS
+from workspaces import audit
+from workspaces.context import mode
+from workspaces.deps import require_viewer
 
 router = APIRouter(prefix="/data", tags=["data"])
 _fails: Dict[str, List[float]] = defaultdict(list)
 
 
-def require_admin(request: Request, x_admin_token: Optional[str] = Header(default=None)) -> None:
+async def require_admin(request: Request, x_admin_token: Optional[str] = Header(default=None),
+                        authorization: Optional[str] = Header(default=None), x_workspace_key: Optional[str] = Header(default=None)) -> None:
+    """A workspace admin key changes that workspace's data. Without a key, only the original single-workspace
+    mode applies, and it keeps using ADMIN_TOKEN."""
+    from workspaces import deps
+
+    if x_workspace_key or (authorization and authorization.lower().startswith("bearer ")):
+        await deps.require_admin_ws(request, authorization, x_workspace_key)
+        return
+    if mode() == "required":
+        raise HTTPException(401, "Sign in with your workspace key.")
     token = os.getenv("ADMIN_TOKEN", "")
     if not token:
         if service.admin_enabled():
@@ -82,7 +95,7 @@ class ConnBody(BaseModel):
     params: Dict[str, Any]
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(require_viewer)])
 def get_status():
     return service.status()
 
@@ -94,11 +107,13 @@ def connections():
 
 @router.post("/connections", dependencies=[Depends(require_admin)])
 def create_connection(b: ConnBody):
+    audit.log("connection saved", f"{b.type}: {b.name}")
     return _run(store.save_connection, b.name, b.type, b.params)
 
 
 @router.put("/connections/{cid}", dependencies=[Depends(require_admin)])
 def update_connection(cid: str, b: ConnBody):
+    audit.log("connection updated", cid)
     if cid.startswith("env:"):
         raise HTTPException(400, "Server-setting connections are changed on the server.")
     return _run(store.save_connection, b.name, b.type, b.params, cid)
@@ -106,6 +121,7 @@ def update_connection(cid: str, b: ConnBody):
 
 @router.delete("/connections/{cid}", dependencies=[Depends(require_admin)])
 def remove_connection(cid: str):
+    audit.log("connection deleted", cid)
     if cid.startswith("env:"):
         raise HTTPException(400, "Server-setting connections are changed on the server.")
     _run(store.delete_connection, cid)
@@ -126,6 +142,7 @@ def host_key(b: ConnBody):
 
 @router.post("/upload", dependencies=[Depends(require_admin)])
 async def upload(file: UploadFile = File(...)):
+    audit.log("file uploaded", file.filename or "")
     raw = await file.read(readers.MAX_UPLOAD_BYTES + 1)
     if len(raw) > readers.MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"The file is larger than {readers.MAX_UPLOAD_BYTES // (1024 * 1024)} MB.")
@@ -140,6 +157,18 @@ def objects(b: SourceBody):
     return {"objects": _run(service.list_objects, b.model_dump())}
 
 
+class GhostBody(BaseModel):
+    connection_id: Optional[str] = None
+    patterns: Dict[str, str] = {}
+    schedule: Optional[Any] = None
+
+
+@router.put("/ghost", dependencies=[Depends(require_admin)])
+def set_ghost(b: GhostBody):
+    audit.log("drop folder changed")
+    return {"ghost": _run(service.set_ghost_config, b.connection_id, b.patterns, b.schedule)}
+
+
 @router.post("/{dataset}/analyze", dependencies=[Depends(require_admin)])
 def analyze(dataset: str, b: AnalyzeBody):
     return _run(service.analyze, _ds(dataset), b.source.model_dump(), b.mapping, b.options)
@@ -147,31 +176,41 @@ def analyze(dataset: str, b: AnalyzeBody):
 
 @router.put("/{dataset}", dependencies=[Depends(require_admin)])
 def save(dataset: str, b: SaveBody):
+    audit.log("dataset connected", dataset)
     return _run(service.save_dataset, _ds(dataset), b.source.model_dump(), b.mapping, b.options, b.schedule)
 
 
 @router.post("/{dataset}/refresh", dependencies=[Depends(require_admin)])
 def refresh(dataset: str):
+    audit.log("dataset refreshed", dataset)
     return _run(service.refresh_dataset, _ds(dataset), "manual")
 
 
 @router.put("/{dataset}/schedule", dependencies=[Depends(require_admin)])
 def schedule(dataset: str, b: Dict[str, Any]):
+    audit.log("schedule changed", dataset)
     return _run(service.set_schedule, _ds(dataset), b)
 
 
 @router.delete("/{dataset}", dependencies=[Depends(require_admin)])
 def reset_one(dataset: str):
+    audit.log("dataset removed", dataset)
     service.reset_dataset(_ds(dataset))
     return {"ok": True}
 
 
 @router.post("/reset", dependencies=[Depends(require_admin)])
 def reset_everything():
+    audit.log("all data removed")
     service.reset_all()
-    return {"ok": True, "mode": "sample"}
+    return {"ok": True, "mode": service.status()["mode"]}
 
 
 @router.post("/ghost/scan", dependencies=[Depends(require_admin)])
 def ghost_scan():
     return {"state": service.ghost_scan(retry_after=0)}
+
+
+@router.get("/activity", dependencies=[Depends(require_admin)])
+def activity():
+    return {"events": audit.recent(20)}

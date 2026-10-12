@@ -2,7 +2,7 @@ import os
 import json
 from typing import List, Dict, Any, Optional
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import Depends, FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -15,6 +15,9 @@ from traceability import create_trace_record, save_trace, get_recent_traces
 from cashflow.router import router as cashflow_router
 from ingest.router import router as ingest_router
 from ingest import service as ingest_service
+from workspaces import registry as ws_registry
+from workspaces.deps import legacy_only
+from workspaces.router import auth as ws_auth, platform as ws_platform
 
 load_dotenv()
 
@@ -33,6 +36,20 @@ app.add_middleware(
 
 app.include_router(cashflow_router)
 app.include_router(ingest_router)
+app.include_router(ws_platform)
+app.include_router(ws_auth)
+
+
+def _on_workspace_deleted(ws_id: str) -> None:
+    from ingest import store as _store
+    from mlfw import service as _ml
+
+    for k in [k for k in _store._SNAP if ws_id in k[0]]:
+        _store._SNAP.pop(k, None)
+    _ml._forget_workspace(ws_id)
+
+
+ws_registry.on_delete(_on_workspace_deleted)
 
 
 @app.on_event("startup")
@@ -57,7 +74,7 @@ def read_root():
     }
 
 
-@app.get("/traceability")
+@app.get("/traceability", dependencies=[Depends(legacy_only)])
 def traceability():
     return {
         "records": get_recent_traces(20)
@@ -239,7 +256,7 @@ Use this exact JSON shape:
         }
 
 
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(legacy_only)])
 def chat(req: ChatRequest):
     try:
         ar_context = get_ar_context(req.customer_id) if req.customer_id else None
@@ -284,7 +301,7 @@ def chat(req: ChatRequest):
         return {"error": str(e)}
 
 
-@app.post("/chat-upload")
+@app.post("/chat-upload", dependencies=[Depends(legacy_only)])
 async def chat_upload(
     message: str = Form(...),
     history: str = Form("[]"),

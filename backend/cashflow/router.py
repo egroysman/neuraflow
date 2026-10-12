@@ -4,20 +4,22 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from . import ap, ar, assistant, credit, engine, export, gl, macro, trends
+from workspaces import context, usage
+from workspaces.deps import require_admin_ws, require_viewer
 from .models import SCENARIO_LABELS, SCENARIO_PRESETS, ForecastRequest
 
-router = APIRouter(prefix="/cashflow", tags=["cashflow"])
+router = APIRouter(prefix="/cashflow", tags=["cashflow"], dependencies=[Depends(require_viewer)])
 
 PLACEHOLDER_NOTE = (
     "Start date, revenue run-rate and days-to-pay come from your invoice data. "
     "Starting cash, payroll, operating expenses, debt and one-time items are "
     "illustrative placeholders scaled to that revenue - replace them with your real numbers. "
-    "Vendor bills come from the bundled sample payables dataset."
+    "Vendor bills come from the payables data."
 )
 
 
@@ -84,18 +86,28 @@ SAMPLE_CAVEAT = (
     "This runs on the bundled sample invoices (25 customers, 755 invoices). They contain two clearly different kinds of payer, "
     "so they show that the method works, not how it performs on real businesses. A pilot on real customer data is the real test."
 )
+REAL_CAVEAT = (
+    "This replays the score on the invoices connected to this workspace and compares it with what customers did next. "
+    "It shows how well the method ranked your own payers in the past, not a guarantee about the future."
+)
+
+
+def _custom() -> bool:
+    from ingest import service as ing
+
+    return ing.custom_mode()
 
 
 def _validation(invoices, horizon_days: int, late_days: int) -> dict:
     """Back-test results, cached because the invoices only change when the data does."""
-    key = (horizon_days, late_days, len(invoices), round(sum(i.amount for i in invoices), 2),
+    key = (context.current().id, horizon_days, late_days, len(invoices), round(sum(i.amount for i in invoices), 2),
            max((i.payment_date for i in invoices if i.payment_date), default=None))
     if key not in _VALIDATION_CACHE:
         if len(_VALIDATION_CACHE) > 20:
             _VALIDATION_CACHE.clear()
         _VALIDATION_CACHE[key] = credit.backtest(invoices, horizon_days=horizon_days, late_days=late_days)
     result = _VALIDATION_CACHE[key]
-    return result | {"caveat": SAMPLE_CAVEAT}
+    return result | {"caveat": REAL_CAVEAT if _custom() else SAMPLE_CAVEAT}
 
 
 @router.get("/credit")
@@ -133,7 +145,7 @@ def ml_overview():
     return get_service().overview()
 
 
-@router.post("/ml/retrain")
+@router.post("/ml/retrain", dependencies=[Depends(require_admin_ws)])
 def ml_retrain():
     """Retrain every model on the current data and record new versions in the registry."""
     from mlfw.service import get_service
@@ -189,6 +201,7 @@ class AssistantRequest(BaseModel):
 @router.post("/assistant")
 def tab_assistant(req: AssistantRequest):
     """Answer a question about one tab from the same forecast and loaded data the user is looking at."""
+    usage.charge_assistant()
     rows = ar.load_invoice_rows()
     bill_rows = ap.load_bill_rows()
     ledger = gl.load_gl()

@@ -9,3 +9,5 @@ import tempfile
 
 # Never read or write the real data store from tests.
 os.environ["INGEST_DIR"] = tempfile.mkdtemp(prefix="nf-ingest-")
+os.environ["WORKSPACES_DIR"] = tempfile.mkdtemp(prefix="nf-ws-")
+os.environ.setdefault("OPENAI_API_KEY", "dummy")

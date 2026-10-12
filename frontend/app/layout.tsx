@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import AuthProvider, { AuthGate } from "./AuthProvider";
 import TabNav from "./TabNav";
 
 const geistSans = Geist({
@@ -28,8 +29,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col"><TabNav />
-        {children}
+      <body className="min-h-full flex flex-col">
+        <AuthProvider>
+          <TabNav />
+          <AuthGate>{children}</AuthGate>
+        </AuthProvider>
       </body>
     </html>
   );

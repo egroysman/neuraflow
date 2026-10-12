@@ -1,3 +1,4 @@
+import { authFetch, downloadFile } from "../auth";
 import type { Adjustments, Assumptions, CreditScores, CreditValidation, Defaults, Forecast, GlBaselines, GlOverview, MacroData, Scenario, TabId, Trends } from "./types";
 
 // Backend base URL. Defaults to the deployed NeuraFlow API (same as the home page); set NEXT_PUBLIC_API_BASE=http://localhost:8000 for local development.
@@ -67,19 +68,19 @@ async function parseError(res: Response): Promise<string> {
 }
 
 export async function fetchDefaults(signal?: AbortSignal): Promise<Defaults> {
-  const res = await fetch(`${API_BASE}/cashflow/defaults`, { signal });
+  const res = await authFetch(`${API_BASE}/cashflow/defaults`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
 export async function fetchTrends(signal?: AbortSignal): Promise<Trends> {
-  const res = await fetch(`${API_BASE}/cashflow/trends`, { signal });
+  const res = await authFetch(`${API_BASE}/cashflow/trends`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
 export async function fetchGl(asOf?: string, signal?: AbortSignal): Promise<GlOverview> {
-  const res = await fetch(`${API_BASE}/cashflow/gl${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ""}`, { signal });
+  const res = await authFetch(`${API_BASE}/cashflow/gl${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ""}`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
@@ -108,7 +109,7 @@ export function applyGlBaselines(a: Assumptions, b: GlBaselines): Assumptions {
 }
 
 export async function fetchMacro(refresh = false, signal?: AbortSignal): Promise<MacroData> {
-  const res = await fetch(`${API_BASE}/cashflow/macro${refresh ? "?refresh=true" : ""}`, { signal });
+  const res = await authFetch(`${API_BASE}/cashflow/macro${refresh ? "?refresh=true" : ""}`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
@@ -137,7 +138,7 @@ export async function fetchForecast(
   body: ForecastBody,
   signal?: AbortSignal
 ): Promise<Forecast> {
-  const res = await fetch(`${API_BASE}/cashflow/forecast`, {
+  const res = await authFetch(`${API_BASE}/cashflow/forecast`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -151,7 +152,7 @@ export async function downloadExport(
   body: ForecastBody,
   format: "xlsx" | "csv"
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/cashflow/export?format=${format}`, {
+  const res = await authFetch(`${API_BASE}/cashflow/export?format=${format}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -188,7 +189,7 @@ export async function askAssistant(
   },
   signal?: AbortSignal
 ): Promise<AssistantReply> {
-  const res = await fetch(`${API_BASE}/cashflow/assistant`, {
+  const res = await authFetch(`${API_BASE}/cashflow/assistant`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -208,34 +209,34 @@ export async function askAssistant(
 }
 
 export async function fetchCredit(asOf?: string, signal?: AbortSignal): Promise<CreditScores> {
-  const res = await fetch(`${API_BASE}/cashflow/credit${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ""}`, { signal });
+  const res = await authFetch(`${API_BASE}/cashflow/credit${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ""}`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
 export async function fetchCreditValidation(horizonDays: number, lateDays: number, signal?: AbortSignal): Promise<CreditValidation> {
-  const res = await fetch(`${API_BASE}/cashflow/credit/validation?horizon_days=${horizonDays}&late_days=${lateDays}`, { signal });
+  const res = await authFetch(`${API_BASE}/cashflow/credit/validation?horizon_days=${horizonDays}&late_days=${lateDays}`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
-export const creditValidationCsvUrl = (horizonDays: number, lateDays: number) =>
-  `${API_BASE}/cashflow/credit/validation/export?horizon_days=${horizonDays}&late_days=${lateDays}`;
+export const downloadCreditValidationCsv = (horizonDays: number, lateDays: number) =>
+  downloadFile(`${API_BASE}/cashflow/credit/validation/export?horizon_days=${horizonDays}&late_days=${lateDays}`, "neuraflow_credit_backtest.csv");
 
 export async function fetchMlOverview(signal?: AbortSignal): Promise<import("./types").MlOverview> {
-  const res = await fetch(`${API_BASE}/cashflow/ml/overview`, { signal });
+  const res = await authFetch(`${API_BASE}/cashflow/ml/overview`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
 export async function retrainModels(): Promise<import("./types").MlOverview> {
-  const res = await fetch(`${API_BASE}/cashflow/ml/retrain`, { method: "POST" });
+  const res = await authFetch(`${API_BASE}/cashflow/ml/retrain`, { method: "POST" });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
 export async function fetchMlOpenInvoices(limit = 15, signal?: AbortSignal): Promise<import("./types").MlOpenInvoices> {
-  const res = await fetch(`${API_BASE}/cashflow/ml/predictions/open-invoices?limit=${limit}`, { signal });
+  const res = await authFetch(`${API_BASE}/cashflow/ml/predictions/open-invoices?limit=${limit}`, { signal });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }

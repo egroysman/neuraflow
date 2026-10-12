@@ -33,9 +33,10 @@ LOCK = threading.RLock()
 
 
 def base_dir() -> Path:
-    d = Path(os.getenv("INGEST_DIR") or Path(__file__).resolve().parent.parent / "ingest_store")
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """The current workspace's data folder. Raises if there is no workspace (required mode)."""
+    from workspaces import context
+
+    return context.data_dir()
 
 
 def _read_json(name: str, default: Any) -> Any:
@@ -59,12 +60,25 @@ def _fernet():
     key = os.getenv("CONNECTION_ENCRYPTION_KEY", "").strip()
     if not key:
         raise SourceError("ENCRYPTION_KEY_MISSING: Saving a connection needs CONNECTION_ENCRYPTION_KEY on the server. Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
+    import base64
+
     from cryptography.fernet import Fernet
+    from workspaces import context
 
     try:
-        return Fernet(key.encode())
+        Fernet(key.encode())  # validates the master key
     except Exception:  # noqa: BLE001
         raise SourceError("CONNECTION_ENCRYPTION_KEY is not a valid key. Generate one with Fernet.generate_key().")
+    ws = context.current()
+    if ws.legacy:
+        return Fernet(key.encode())
+    # Each workspace gets its own key derived from the master, so one workspace's saved
+    # credentials cannot be read by copying them into another.
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=f"neuraflow-ws:{ws.id}".encode()).derive(base64.urlsafe_b64decode(key.encode()))
+    return Fernet(base64.urlsafe_b64encode(derived))
 
 
 def encryption_ready() -> bool:
@@ -91,7 +105,12 @@ def decrypt_secrets(token: str) -> Dict[str, str]:
 # ------------------------------------------------------------------ env connections
 
 def env_connections() -> Dict[str, Dict[str, Any]]:
-    """Connections defined by server settings. Read-only, never stored, never shown."""
+    """Connections defined by server settings. Read-only, never stored, never shown.
+    Only the legacy workspace sees them: they are the operator's own accounts, not a customer's."""
+    from workspaces import context
+
+    if not context.current().legacy:
+        return {}
     e = os.getenv
     out: Dict[str, Dict[str, Any]] = {}
     if e("SNOWFLAKE_ACCOUNT") and e("SNOWFLAKE_USER") and (e("SNOWFLAKE_PASSWORD") or e("SNOWFLAKE_PRIVATE_KEY")):
@@ -236,7 +255,7 @@ def write_snapshot(key: str, rows: List[Dict[str, Any]]) -> None:
     with gzip.open(tmp, "wt", encoding="utf-8") as fh:
         json.dump(rows, fh)
     os.replace(tmp, p)
-    _SNAP.pop(key, None)
+    _SNAP.pop((str(base_dir()), key), None)
 
 
 def read_snapshot(key: str) -> Optional[List[Dict[str, Any]]]:
@@ -244,12 +263,12 @@ def read_snapshot(key: str) -> Optional[List[Dict[str, Any]]]:
     if not p.exists():
         return None
     m = p.stat().st_mtime_ns
-    hit = _SNAP.get(key)
-    if hit and hit[0] == m and hit[1] == str(base_dir()):
-        return hit[2]
+    hit = _SNAP.get((str(base_dir()), key))
+    if hit and hit[0] == m:
+        return hit[1]
     with gzip.open(p, "rt", encoding="utf-8") as fh:
         rows = json.load(fh)
-    _SNAP[key] = (m, str(base_dir()), rows)
+    _SNAP[(str(base_dir()), key)] = (m, rows)
     return rows
 
 
@@ -257,4 +276,4 @@ def delete_snapshot(key: str) -> None:
     p = base_dir() / "snapshots" / f"{key}.json.gz"
     if p.exists():
         p.unlink()
-    _SNAP.pop(key, None)
+    _SNAP.pop((str(base_dir()), key), None)

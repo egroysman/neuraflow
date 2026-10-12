@@ -22,12 +22,13 @@ export type DatasetStatus = {
 
 export type DataStatus = {
   mode: "sample" | "custom";
+  empty?: boolean;
   datasets: DatasetStatus[];
   warnings: string[];
   admin: { enabled: boolean; token_required: boolean };
   encryption_ready: boolean;
   storage: { path_set: boolean; note: string | null };
-  ghost: { enabled: boolean; schedule?: Schedule | null };
+  ghost: { enabled: boolean; schedule?: Schedule | null; connection_id?: string | null; patterns?: Record<string, string>; source?: "workspace" | "server" | null };
   limits: { max_upload_mb: number; row_limit: number };
 };
 
@@ -55,3 +56,5 @@ export type Analysis = {
   classified: { AccountID: string; AccountName: string; AccountType: string; ModelLine: string; inferred: boolean }[] | null;
   validation: { ok: boolean; issues: Issue[]; stats: Record<string, unknown> };
 };
+
+export type ActivityEvent = { at: number; actor: string; action: string; detail: string };

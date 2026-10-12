@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { creditValidationCsvUrl, fetchCredit, fetchCreditValidation, money, shortDate } from "./lib";
+import { downloadCreditValidationCsv, fetchCredit, fetchCreditValidation, money, shortDate } from "./lib";
 import { BAND_STYLE } from "./Panels";
 import { Card, Stat } from "./ui";
 import type { CreditCustomer, CreditScores, CreditValidation } from "./types";
@@ -54,6 +54,7 @@ function WhyPanel({ c, onClose }: { c: CreditCustomer; onClose: () => void }) {
 }
 
 function Validation({ v, horizon, late }: { v: CreditValidation | null; horizon: number; late: number }) {
+  const [dlError, setDlError] = useState<string | null>(null);
   if (!v) return <p className="text-sm text-[#9ca3af]" role="status">Running the back-test…</p>;
   if (!v.available) return <p className="text-sm text-[#9ca3af]">{v.reason}</p>;
   const auc = v.auc.value;
@@ -172,9 +173,10 @@ function Validation({ v, horizon, late }: { v: CreditValidation | null; horizon:
             numbers are therefore not fully out-of-sample, and the next test should use data the score has never seen.
           </li>
         </ul>
-        <a href={creditValidationCsvUrl(horizon, late)} className="mt-3 inline-block rounded-lg border border-[#374151] px-3 py-1.5 text-xs font-semibold text-[#e5e7eb] hover:border-[#60a5fa]">
+        <button type="button" onClick={() => { setDlError(null); downloadCreditValidationCsv(horizon, late).catch((e: Error) => setDlError(e.message)); }} className="mt-3 inline-block rounded-lg border border-[#374151] px-3 py-1.5 text-xs font-semibold text-[#e5e7eb] hover:border-[#60a5fa]">
           Download every scored invoice (CSV)
-        </a>
+        </button>
+        {dlError && <p role="alert" className="mb-0 mt-2 text-xs text-[#fca5a5]">{dlError}</p>}
       </details>
     </div>
   );
