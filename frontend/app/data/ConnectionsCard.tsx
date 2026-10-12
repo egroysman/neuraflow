@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Badge, Card, Field, GhostButton, inputClass } from "../cashflow/ui";
+import SetupGuide from "./SetupGuide";
 import { createConnection, deleteConnection, observeHostKey, testConnection, updateConnection } from "./api";
 import type { ConnType, Connection } from "./types";
 
@@ -37,7 +38,7 @@ const FIELDS: Record<ConnType, FieldDef[]> = {
 };
 const TYPE_LABEL: Record<ConnType, string> = { snowflake: "Snowflake", databricks: "Databricks", sftp: "SFTP" };
 
-function ConnectionForm({ initial, onDone, onCancel, encryptionReady }: { initial: Connection | null; onDone: () => void; onCancel: (saved: boolean) => void; encryptionReady: boolean }) {
+function ConnectionForm({ initial, onDone, onCancel, encryptionReady }: { initial: Connection | null; onDone: (id: string, text: string, warn: boolean) => void; onCancel: (saved: boolean) => void; encryptionReady: boolean }) {
   const [type, setType] = useState<ConnType>(initial?.type ?? "snowflake");
   const [name, setName] = useState(initial?.name ?? "");
   const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(Object.entries(initial?.params ?? {}).map(([k, v]) => [k, String(v)])));
@@ -45,6 +46,7 @@ function ConnectionForm({ initial, onDone, onCancel, encryptionReady }: { initia
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [savedId, setSavedId] = useState<string | null>(initial?.id ?? null); // once saved, later clicks update it instead of adding another
   const [didSave, setDidSave] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const set = (k: string, v: string) => setVals((p) => ({ ...p, [k]: v }));
 
   async function lookup() {
@@ -80,7 +82,11 @@ function ConnectionForm({ initial, onDone, onCancel, encryptionReady }: { initia
         if (t.host_key_sha256) set("host_key_sha256", t.host_key_sha256);
         return;
       }
-      onDone();
+      if (t.warning) {
+        setMsg({ ok: false, text: `${t.message} ${t.warning}` });
+        return;
+      }
+      onDone(r.id, t.message, false);
     } catch (e) {
       const m = (e as Error).message;
       setMsg({ ok: false, text: stored ? `Saved, but the connection test failed. ${m}` : m });
@@ -95,6 +101,16 @@ function ConnectionForm({ initial, onDone, onCancel, encryptionReady }: { initia
         <p role="status" className="rounded-lg border border-[#78350f] bg-[#2b1d07] px-3 py-2 text-xs text-[#fde68a]">
           Saving a connection needs <code>CONNECTION_ENCRYPTION_KEY</code> on the server. Until it is set, use server settings for credentials instead.
         </p>
+      )}
+      {type !== "sftp" && (
+        <div>
+          <GhostButton onClick={() => setGuideOpen((o) => !o)}>{guideOpen ? "Hide setup guide" : `Setup guide: create a read-only ${TYPE_LABEL[type]} account`}</GhostButton>
+          {guideOpen && (
+            <div className="mt-2">
+              <SetupGuide key={type} type={type} onApply={(values) => setVals((p) => ({ ...p, ...values }))} />
+            </div>
+          )}
+        </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Type">
@@ -128,7 +144,7 @@ function ConnectionForm({ initial, onDone, onCancel, encryptionReady }: { initia
         })}
       </div>
       {type === "sftp" && <GhostButton onClick={lookup} disabled={busy || !vals.host}>Look up fingerprint</GhostButton>}
-      {msg && <p role={msg.ok ? "status" : "alert"} className={`m-0 text-xs ${msg.ok ? "text-[#6ee7b7]" : "text-[#fca5a5]"}`}>{msg.text}</p>}
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`m-0 whitespace-pre-line text-xs ${msg.ok ? "text-[#6ee7b7]" : "text-[#fca5a5]"}`}>{msg.text}</p>}
       <div className="flex gap-2">
         <button type="button" onClick={save} disabled={busy || !name.trim() || !encryptionReady} className="rounded-lg bg-[#2563eb] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1d4ed8] disabled:opacity-50">
           {busy ? "Working…" : "Save and test"}
@@ -141,14 +157,14 @@ function ConnectionForm({ initial, onDone, onCancel, encryptionReady }: { initia
 
 export default function ConnectionsCard({ connections, encryptionReady, canEdit, onChanged }: { connections: Connection[]; encryptionReady: boolean; canEdit: boolean; onChanged: () => void }) {
   const [editing, setEditing] = useState<Connection | "new" | null>(null);
-  const [results, setResults] = useState<Record<string, { ok: boolean; text: string; fp?: string }>>({});
+  const [results, setResults] = useState<Record<string, { ok: boolean; text: string; fp?: string; warn?: boolean }>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
   async function test(c: Connection) {
     setBusy(c.id);
     try {
       const r = await testConnection(c.id);
-      setResults((p) => ({ ...p, [c.id]: r.needs_host_key ? { ok: false, text: r.message, fp: r.host_key_sha256 } : { ok: true, text: "Connected." } }));
+      setResults((p) => ({ ...p, [c.id]: r.needs_host_key ? { ok: false, text: r.message, fp: r.host_key_sha256 } : r.warning ? { ok: true, warn: true, text: `${r.message} ${r.warning}` } : { ok: true, text: r.message } }));
     } catch (e) {
       setResults((p) => ({ ...p, [c.id]: { ok: false, text: (e as Error).message } }));
     } finally {
@@ -204,7 +220,7 @@ export default function ConnectionsCard({ connections, encryptionReady, canEdit,
               )}
             </div>
             {results[c.id] && (
-              <p role="status" className={`m-0 mt-2 text-xs ${results[c.id].ok ? "text-[#6ee7b7]" : "text-[#fca5a5]"}`}>
+              <p role="status" className={`m-0 mt-2 whitespace-pre-line text-xs ${results[c.id].warn ? "text-[#fde68a]" : results[c.id].ok ? "text-[#6ee7b7]" : "text-[#fca5a5]"}`}>
                 {results[c.id].text}
                 {results[c.id].fp && !c.env && (
                   <>
@@ -228,8 +244,9 @@ export default function ConnectionsCard({ connections, encryptionReady, canEdit,
               setEditing(null);
               if (saved) onChanged();
             }}
-            onDone={() => {
+            onDone={(id, text, warn) => {
               setEditing(null);
+              setResults((p) => ({ ...p, [id]: { ok: true, warn, text } }));
               onChanged();
             }}
           />
