@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { API_BASE } from "../cashflow/lib";
 import { useAuth } from "../AuthProvider";
+import BrandMark from "../BrandMark";
 import AskBox from "./AskBox";
 import DemoForm from "./DemoForm";
 import LiveDemo from "./LiveDemo";
@@ -29,7 +30,10 @@ export default function Welcome() {
   return (
     <>
       <header className="mx-auto flex max-w-[1080px] flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-5 sm:px-8">
-        <span className="sans text-xl font-extrabold tracking-tight">NeuraFlow</span>
+        <span className="sans flex items-center gap-2.5 text-xl font-extrabold tracking-tight">
+          <BrandMark size={30} />
+          NeuraFlow
+        </span>
         <nav aria-label="Site" className="sans flex flex-wrap items-center gap-x-5 gap-y-1 text-[0.95rem] font-medium">
           <a href="#how">How it works</a>
           <a href="#today">Where it is today</a>
