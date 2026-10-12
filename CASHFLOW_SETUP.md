@@ -194,3 +194,15 @@ Set `LEAD_NOTIFY_EMAIL` to where requests should arrive, plus one way to send:
 - **SMTP (for example Gmail with an app password):** set `SMTP_HOST` (smtp.gmail.com), `SMTP_USERNAME`, `SMTP_PASSWORD` (an app password, not your login password), and optionally `SMTP_PORT` (587 default, 465 for SSL) and `LEAD_FROM_EMAIL`. Some hosts, including Railway on lower plans, block outgoing SMTP; if emails don't arrive, use Resend.
 
 A failed email never loses the request: it is still stored, and `/platform` shows "Email not sent" on it. Requests are only accepted when they can't silently vanish, meaning an email destination is configured or `WORKSPACES_DIR` is set; otherwise the form says requests aren't open yet.
+
+## Putting a password in front of the app (`APP_PASSWORD`)
+
+The quickest way to stop strangers opening the app. Set `APP_PASSWORD` on the backend (Railway) to any long phrase.
+Then every page and API call, including the original chat and traceability endpoints, needs it, and the site header
+shows **Log in** instead of **Open your workspace** until someone has entered it.
+
+- People with the password can **look**. Changing data still needs `ADMIN_TOKEN`, so set that too.
+- It is one shared password for the one original workspace. For separate customers with their own data and their own
+  keys, use `WORKSPACE_MODE=required` instead (see Customer workspaces above); it needs a persistent volume.
+- Wrong guesses are throttled (20 per 10 minutes per IP). Changing the password logs everyone out.
+- Leave `APP_PASSWORD` unset and nothing changes.
