@@ -53,7 +53,7 @@ class MLData:
         return cls(ar.parse_invoices(ar.load_invoice_rows()), ap.parse_bills(ap.load_bill_rows()), gl.load_gl())
 
     def key(self) -> str:
-        return f"{len(self.invoices)}|{round(sum(i.amount for i in self.invoices), 2)}|{len(self.bills)}|{self.data_end}|{bool(self.gl_data)}"
+        return f"{len(self.invoices)}|{round(sum(i.amount for i in self.invoices), 2)}|{len(self.bills)}|{self.data_end}|{len((self.gl_data or {}).get('journal', []))}"
 
     def gl_months(self) -> List[Dict[str, Any]]:
         if not self.gl_data:

@@ -58,7 +58,12 @@ class Bill:
 
 
 def load_bill_rows() -> List[Dict[str, Any]]:
-    """Raw bill rows from the bundled sample dataset (or DEFAULT_BILLS_CSV_PATH)."""
+    """Raw bill rows from the Data page, else the bundled sample dataset (or DEFAULT_BILLS_CSV_PATH)."""
+    from ingest import service as ingest
+
+    loaded = ingest.rows_for("bills")
+    if loaded is not None:
+        return loaded
     fallback = Path(__file__).resolve().parent.parent / "neuraflow_bills.csv"
     env_path = os.getenv("DEFAULT_BILLS_CSV_PATH")
     path = Path(env_path) if env_path and Path(env_path).exists() else fallback

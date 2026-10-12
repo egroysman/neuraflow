@@ -62,7 +62,14 @@ def load_invoice_rows() -> List[Dict[str, Any]]:
     Reuses the app's data-source layer so the model sees the same invoices as
     the chat assistant. Falls back to the bundled CSV when the active source
     does not expose raw rows (for example Snowflake).
+
+    Data loaded on the Data page (CSV, Excel, Snowflake, Databricks, SFTP) wins over everything.
     """
+    from ingest import service as ingest
+
+    loaded = ingest.rows_for("invoices")
+    if loaded is not None:
+        return loaded
     try:
         from data_sources import get_data_source
 

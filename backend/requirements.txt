@@ -6,3 +6,7 @@ openai
 pandas
 scikit-learn
 openpyxl
+snowflake-connector-python
+databricks-sql-connector
+paramiko
+cryptography

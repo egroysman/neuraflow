@@ -2,14 +2,33 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { API_BASE } from "./cashflow/lib";
 
 const TABS = [
   { href: "/cashflow", label: "Cash Flow" },
   { href: "/models", label: "Models" },
+  { href: "/data", label: "Data" },
 ];
 
 export default function TabNav() {
   const pathname = usePathname();
+  // Tells people when they are looking at the built-in demo data instead of their own.
+  const [mode, setMode] = useState<"sample" | "custom" | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch(`${API_BASE}/data/status`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => alive && j && setMode(j.mode === "custom" ? "custom" : "sample"))
+        .catch(() => {});
+    load();
+    window.addEventListener("nf-data-changed", load); // the Data page fires this after it loads or removes data
+    return () => {
+      alive = false;
+      window.removeEventListener("nf-data-changed", load);
+    };
+  }, []);
   return (
     <nav
       aria-label="Main"
@@ -34,6 +53,15 @@ export default function TabNav() {
             </Link>
           );
         })}
+        {mode && (
+          <Link
+            href="/data"
+            className={`ml-auto rounded-full px-2.5 py-1 text-[11px] font-semibold ${mode === "sample" ? "bg-[#2b1d07] text-[#fbbf24]" : "bg-[#052e22] text-[#34d399]"}`}
+            title={mode === "sample" ? "You are looking at built-in sample data. Connect your own on the Data page." : "Using the data you connected."}
+          >
+            {mode === "sample" ? "Sample data" : "Your data"}
+          </Link>
+        )}
       </div>
     </nav>
   );
