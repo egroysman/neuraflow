@@ -4,3 +4,4 @@ backend/.env
 backend/models_store/
 
 backend/ingest_store/
+backend/workspaces_store/

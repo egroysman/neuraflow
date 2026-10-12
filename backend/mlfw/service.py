@@ -281,7 +281,8 @@ class Service:
                         "invoices": len(data.invoices), "customers": len({i.customer_id for i in data.invoices}),
                         "bills": len(data.bills), "vendors": len({b.vendor_id for b in data.bills}),
                         "ledger_months": len(data.gl_months()), "as_of": data.as_of, "data_end": data.data_end,
-                        "caveat": "Bundled sample data. It shows the framework works, not how the models perform on real businesses.",
+                        "caveat": ("Bundled sample data. It shows the framework works, not how the models perform on real businesses."
+                                   if not _custom() else "Based on the data connected to this workspace. Models are checked against simple rules before they are trusted."),
                     },
                     "summary": {"tasks": len(reports), "tested": len(verdicts), **{v: verdicts.count(v) for v in ("beats", "ties", "worse", "unclear")}},
                     "tasks": reports,
@@ -335,11 +336,27 @@ class Service:
         )
 
 
-_service: Optional[Service] = None
+def _custom() -> bool:
+    from ingest import service as ing
+
+    return ing.custom_mode()
+
+
+_service: Optional[Service] = None  # kept so tests can reset it
+_services: Dict[tuple, Service] = {}
 
 
 def get_service() -> Service:
-    global _service
-    if _service is None:
-        _service = Service()
-    return _service
+    """One service per workspace (and per model folder), so models, caches and results are never shared."""
+    from workspaces import context
+
+    key = (context.current().id, str(context.models_dir()))
+    svc = _services.get(key)
+    if svc is None:
+        svc = _services[key] = Service(Registry(key[1]))
+    return svc
+
+
+def _forget_workspace(ws_id: str) -> None:
+    for k in [k for k in _services if k[0] == ws_id]:
+        _services.pop(k, None)

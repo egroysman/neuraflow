@@ -132,3 +132,37 @@ A dataset loads itself only when every required column is matched, the checks pa
 - NeuraFlow only ever issues `SELECT`, with a row limit, and custom queries must be a single read-only statement. That filter is a safety net, not a security boundary: give the connection a read-only role that can see only the tables it needs.
 - There is one workspace. Whatever is loaded is what every viewer of the deployment sees; there are no per-user accounts or separate customers yet.
 - Uploaded files stay on the server's disk until replaced or disconnected.
+
+## Customer workspaces
+
+Each customer gets a private workspace: its own data, saved connections, uploads, models, schedules and activity log. Nothing is shared, and a request that is not tied to a workspace is refused rather than falling back to anyone's data.
+
+**Turning it on.** Set these on the backend (Railway):
+
+| Variable | Purpose |
+| --- | --- |
+| `WORKSPACE_MODE=required` | Every request needs a workspace key. Leave unset (or `open`) to keep today's single-workspace behaviour. |
+| `PLATFORM_ADMIN_TOKEN` | Lets you, the platform operator, open `/platform` to create workspaces. Keep it secret; it is separate from customer keys. |
+| `WORKSPACES_DIR` | Where workspace folders live. **Mount a persistent volume and point this at it**, otherwise workspaces are lost on redeploy. |
+| `CONNECTION_ENCRYPTION_KEY` | Master key for saved credentials. Each workspace gets its own key derived from it, so one workspace's saved credentials cannot be opened from another. Back it up: losing it means re-entering every connection. |
+| `ASSISTANT_DAILY_LIMIT` | Assistant questions per workspace per day (default 200). |
+
+**Daily use.**
+1. Open `/platform`, enter the platform token, and create a workspace. Choose **Empty** (the customer connects their own data) or **Demo** (clearly labelled sample data, for demos only).
+2. The first admin key is shown **once**. Copy it, or copy the private sign-in link, and send it to the customer privately.
+3. The customer signs in at `/signin` (or opens the link). Admin keys connect and change data; viewer keys can only look. Issue more keys, or revoke one, from the same page. Revoking works immediately; the last admin key cannot be revoked, so nobody is locked out.
+4. Suspend a workspace to lock everyone out without deleting anything. Delete removes the data, connections, models and keys for good.
+
+**What is different inside a workspace.**
+- It starts empty and shows a "Connect your data" screen until something is loaded. It never shows sample numbers.
+- The operator's own server connections (`SNOWFLAKE_*`, `DATABRICKS_*`, `SFTP_*`) are not visible to customers. Customers add their own on the Data page, and their saved credentials are encrypted per workspace.
+- SFTP auto-load is set per workspace on the Data page (connection, file patterns, schedule).
+- The Data page shows a short activity log (who changed what, never secrets or values).
+
+**Rolling it out on an existing deployment.**
+1. Add a volume and set `WORKSPACES_DIR`, `PLATFORM_ADMIN_TOKEN` and `CONNECTION_ENCRYPTION_KEY`.
+2. Deploy with `WORKSPACE_MODE` still unset. Nothing changes for current users.
+3. Create the customers' workspaces and check them.
+4. Set `WORKSPACE_MODE=required`.
+
+Notes: the original `/chat`, `/chat-upload`, `/traceability` endpoints and the `/classic` page use one global data source, so they are switched off in required mode. The in-app scheduler runs once per backend instance; run a single instance, or refreshes will repeat.

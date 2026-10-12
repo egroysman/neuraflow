@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Badge, Card, GhostButton, Stat, inputClass } from "../cashflow/ui";
-import { ApiError, getStatus, ghostScan, listConnections, refreshDataset, resetAll, resetDataset, setToken } from "./api";
+import { useAuth } from "../AuthProvider";
+import DropFolder from "./DropFolder";
+import { ApiError, getActivity, getStatus, ghostScan, listConnections, refreshDataset, resetAll, resetDataset, setToken } from "./api";
 import ConnectionsCard from "./ConnectionsCard";
 import Wizard from "./Wizard";
-import type { Connection, DataStatus, DatasetStatus, Schedule } from "./types";
+import type { ActivityEvent, Connection, DataStatus, DatasetStatus, Schedule } from "./types";
 
 const when = (t?: number | null) => (t ? new Date(t * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
 
@@ -15,7 +17,7 @@ function scheduleText(s?: Schedule): string {
   return `Refreshes daily at ${s.at}${s.timezone ? ` (${s.timezone})` : ""}`;
 }
 
-type Access = "loading" | "ok" | "needs-token" | "disabled";
+type Access = "loading" | "ok" | "needs-token" | "disabled" | "viewer";
 
 async function loadAll(): Promise<{ status: DataStatus; conns: Connection[]; encryption: boolean; access: Access }> {
   const status = await getStatus();
@@ -24,6 +26,7 @@ async function loadAll(): Promise<{ status: DataStatus; conns: Connection[]; enc
     const c = await listConnections();
     return { status, conns: c.connections, encryption: c.encryption_ready, access: "ok" };
   } catch (e) {
+    if (e instanceof ApiError && e.status === 403) return { status, conns: [], encryption: status.encryption_ready, access: "viewer" };
     if (e instanceof ApiError && (e.status === 401 || e.status === 429)) return { status, conns: [], encryption: status.encryption_ready, access: "needs-token" };
     throw e;
   }
@@ -40,8 +43,12 @@ export default function DataApp() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tokenText, setTokenText] = useState("");
   const [tokenError, setTokenError] = useState<string | null>(null);
+  const { session } = useAuth();
+  const own = !!session && !session.legacy; // a customer workspace: no admin token, and "nothing connected" means empty
+  const [events, setEvents] = useState<ActivityEvent[]>([]);
 
   function apply(r: Awaited<ReturnType<typeof loadAll>>) {
+    if (r.access === "ok") getActivity().then((a) => setEvents(a.events)).catch(() => {});
     setStatus(r.status);
     setConns(r.conns);
     setEncryption(r.encryption);
@@ -101,6 +108,7 @@ export default function DataApp() {
 
   const canEdit = access === "ok";
   const custom = status?.mode === "custom";
+  const empty = !!status?.empty;
 
   return (
     <main className="mx-auto w-full min-w-0 max-w-[1100px] space-y-5 px-4 py-6 text-[#e5e7eb] sm:px-6">
@@ -118,12 +126,17 @@ export default function DataApp() {
       {status && (
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <Stat label="Using" value={custom ? "Your data" : "Sample data"} tone={custom ? "good" : "warn"} sub={custom ? "Sources you connected" : "Bundled demo data"} />
+            <Stat label="Using" value={empty ? "No data yet" : custom ? "Your data" : "Sample data"} tone={custom && !empty ? "good" : "warn"} sub={empty ? "Connect a dataset below" : custom ? "Sources you connected" : "Bundled demo data"} />
             <Stat label="Datasets connected" value={`${status.datasets.filter((d) => d.configured).length} of ${status.datasets.length}`} />
             <Stat label="Scheduled refreshes" value={String(status.datasets.filter((d) => d.schedule && d.schedule.mode !== "off").length)} />
-            <Stat label="Auto-load from SFTP" value={status.ghost.enabled ? "On" : "Off"} sub={status.ghost.enabled ? scheduleText(status.ghost.schedule ?? undefined) : "Set SFTP_* settings on the server"} />
+            <Stat label="Auto-load from SFTP" value={status.ghost.enabled ? "On" : "Off"} sub={status.ghost.enabled ? scheduleText(status.ghost.schedule ?? undefined) : own ? "Set up below" : "Set SFTP_* settings on the server"} />
           </div>
 
+          {empty && (
+            <p role="status" className="rounded-xl border border-[#1e3a8a] bg-[#0f1a33] px-4 py-3 text-sm text-[#bfdbfe]">
+              This workspace has no data yet. Start with your invoices: upload a file or connect a source below. Nothing is filled in with sample numbers.
+            </p>
+          )}
           {!custom && (
             <p role="status" className="rounded-xl border border-[#78350f] bg-[#2b1d07] px-4 py-3 text-sm text-[#fde68a]">
               Everything you see is built-in sample data. Connect your invoices below to replace it. Once any dataset is connected, a dataset with no source is left empty, never filled with sample data.
@@ -134,6 +147,11 @@ export default function DataApp() {
           ))}
           {status.storage.note && <p className="m-0 text-xs text-[#6b7280]">{status.storage.note}</p>}
 
+          {access === "viewer" && (
+            <p role="status" className="rounded-xl border border-[#374151] bg-[#111216] px-4 py-3 text-sm text-[#d1d5db]">
+              You are signed in with a viewer key, so this page is read-only. Ask your workspace administrator to change data.
+            </p>
+          )}
           {access === "disabled" && (
             <p role="status" className="rounded-xl border border-[#374151] bg-[#111216] px-4 py-3 text-sm text-[#d1d5db]">
               Changing data is turned off on this server. Set <code>ADMIN_TOKEN</code> to turn it on. Until then this page is read-only.
@@ -166,7 +184,7 @@ export default function DataApp() {
             />
           )}
 
-          <Card title="Datasets" right={canEdit && custom ? <GhostButton danger onClick={() => window.confirm("Remove all connected data and go back to the sample data?") && act("all", resetAll, "Back on sample data.")}>Back to sample data</GhostButton> : undefined}>
+          <Card title="Datasets" right={canEdit && custom && !empty ? <GhostButton danger onClick={() => window.confirm(own ? "Remove all connected data from this workspace?" : "Remove all connected data and go back to the sample data?") && act("all", resetAll, own ? "All data removed." : "Back on sample data.")}>{own ? "Remove all data" : "Back to sample data"}</GhostButton> : undefined}>
             <ul className="m-0 list-none space-y-3 p-0">
               {status.datasets.map((d) => (
                 <li key={d.key} className="rounded-xl border border-[#1f2937] p-4" data-testid={`dataset-${d.key}`}>
@@ -219,6 +237,18 @@ export default function DataApp() {
           </Card>
 
           {access !== "needs-token" && <ConnectionsCard connections={conns} encryptionReady={encryption} canEdit={canEdit} onChanged={reload} />}
+
+          {own && canEdit && <DropFolder status={status} connections={conns} onSaved={async (m) => { await reload(); setNotice(m); }} onError={setError} />}
+
+          {canEdit && events.length > 0 && (
+            <Card title="Recent activity">
+              <ul className="m-0 list-none space-y-1 p-0 text-xs text-[#d1d5db]" data-testid="activity">
+                {events.map((e, i) => (
+                  <li key={i}>{when(e.at / 1)} · {e.actor ? `${e.actor} · ` : ""}{e.action}{e.detail ? `: ${e.detail}` : ""}</li>
+                ))}
+              </ul>
+            </Card>
+          )}
         </>
       )}
     </main>

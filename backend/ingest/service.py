@@ -21,7 +21,17 @@ from .readers import SourceError, Table
 from .schemas import DATASETS, ORDER
 
 PREVIEW_ROWS = 8
-_refresh_lock = threading.Lock()
+_refresh_locks: Dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _refresh_lock() -> threading.Lock:
+    """One refresh at a time per workspace, so a slow customer never holds up another."""
+    from workspaces import context
+
+    wid = context.current().id
+    with _locks_guard:
+        return _refresh_locks.setdefault(wid, threading.Lock())
 
 
 def jsonable(v: Any) -> Any:
@@ -178,7 +188,7 @@ def save_dataset(key: str, src: Dict[str, Any], mapping: Dict[str, Optional[str]
 
 def refresh_dataset(key: str, trigger: str = "manual") -> Dict[str, Any]:
     """Re-read the saved source. Bad or much smaller data never replaces what is already loaded."""
-    with _refresh_lock:
+    with _refresh_lock():
         cfg = store.get_configs().get(key)
         if not cfg:
             raise SourceError("That dataset has no source yet.")
@@ -233,7 +243,11 @@ def reset_all() -> None:
 # ------------------------------------------------------------------ what the forecast reads
 
 def custom_mode() -> bool:
-    return bool(store.get_configs())
+    """True once this workspace uses its own data. A workspace created empty is in custom mode from the start,
+    so it never shows sample numbers."""
+    from workspaces import context
+
+    return bool(store.get_configs()) or context.current().starts_with == "empty"
 
 
 def rows_for(key: str) -> Optional[List[Dict[str, Any]]]:
@@ -315,15 +329,43 @@ def due_datasets(now: Optional[float] = None) -> List[str]:
 
 # ------------------------------------------------------------------ ghost mode (SFTP drop folder)
 
+def get_ghost_config() -> Optional[Dict[str, Any]]:
+    return store._read_json("ghost_config.json", None)
+
+
+def set_ghost_config(connection_id: Optional[str], patterns: Dict[str, str], schedule: Optional[Any]) -> Optional[Dict[str, Any]]:
+    """Save this workspace's drop-folder settings. Passing no patterns turns it off."""
+    pats = {k: str(v).strip() for k, v in (patterns or {}).items() if k in DATASETS and v and str(v).strip()}
+    if not pats:
+        store._write_json("ghost_config.json", None)
+        return None
+    if not connection_id:
+        raise SourceError("Choose the SFTP connection to watch.")
+    conn = store.get_connection(connection_id)
+    if conn["type"] != "sftp":
+        raise SourceError("The drop folder needs an SFTP connection.")
+    cfg = {"connection_id": connection_id, "patterns": pats, "schedule": parse_schedule(schedule or "daily@06:00")}
+    store._write_json("ghost_config.json", cfg)
+    return cfg
+
+
 def ghost_settings() -> Optional[Dict[str, Any]]:
-    """Set SFTP_* and SFTP_PATTERN_<DATASET> on the server and NeuraFlow loads on its own."""
+    """Drop-folder settings. A workspace sets its own; the default workspace can also use SFTP_* server settings
+    plus SFTP_PATTERN_<DATASET>."""
+    saved = get_ghost_config()
+    if saved:
+        try:
+            store.get_connection(saved["connection_id"])
+        except SourceError:
+            return None
+        return saved
     if "env:sftp" not in store.env_connections():
         return None
     pats = {k: os.getenv(f"SFTP_PATTERN_{k.upper()}") for k in ORDER}
     pats = {k: v.strip() for k, v in pats.items() if v and v.strip()}
     if not pats:
         return None
-    return {"patterns": pats, "schedule": parse_schedule(os.getenv("SFTP_SCHEDULE") or "daily@06:00")}
+    return {"connection_id": "env:sftp", "patterns": pats, "schedule": parse_schedule(os.getenv("SFTP_SCHEDULE") or "daily@06:00")}
 
 
 def _ghost_state() -> Dict[str, Any]:
@@ -345,7 +387,7 @@ def ghost_scan(retry_after: float = 3600.0) -> Dict[str, Any]:
         last = state.get(key)
         if last and time.time() - last["at"] < retry_after and not last.get("ok"):
             continue
-        src = {"kind": "connection", "connection_id": "env:sftp", "object": pat}
+        src = {"kind": "connection", "connection_id": g["connection_id"], "object": pat}
         try:
             a = analyze(key, src)
             ds = DATASETS[key]
@@ -401,14 +443,22 @@ def status() -> Dict[str, Any]:
             if gap > 45:
                 warnings.append(f"{DATASETS[lo].label} ends {gap} days before {DATASETS[hi].label}. Check that both are current.")
     return {
-        "mode": "custom" if cfgs else "sample",
+        "mode": "custom" if custom_mode() else "sample",
+        "empty": custom_mode() and not cfgs,
         "datasets": datasets, "warnings": warnings,
-        "admin": {"enabled": admin_enabled(), "token_required": bool(os.getenv("ADMIN_TOKEN"))},
+        "admin": {"enabled": admin_enabled(), "token_required": bool(os.getenv("ADMIN_TOKEN"))} if _legacy() else {"enabled": True, "token_required": False},
         "encryption_ready": store.encryption_ready(),
-        "storage": {"path_set": bool(os.getenv("INGEST_DIR")), "note": None if os.getenv("INGEST_DIR") else "Loaded data and saved connections are kept on the server's local disk and are lost when it redeploys, unless INGEST_DIR points at a persistent volume. Env-variable connections and ghost mode reload on their own."},
-        "ghost": {"enabled": bool(ghost), "schedule": (ghost or {}).get("schedule")},
+        "storage": {"path_set": bool(os.getenv("INGEST_DIR")) or not _legacy(), "note": None if (os.getenv("INGEST_DIR") or not _legacy()) else "Loaded data and saved connections are kept on the server's local disk and are lost when it redeploys, unless INGEST_DIR points at a persistent volume. Env-variable connections and ghost mode reload on their own."},
+        "ghost": {"enabled": bool(ghost), "schedule": (ghost or {}).get("schedule"), "connection_id": (ghost or {}).get("connection_id"),
+                  "patterns": (ghost or {}).get("patterns") or {}, "source": "workspace" if get_ghost_config() else ("server" if ghost else None)},
         "limits": {"max_upload_mb": readers.MAX_UPLOAD_BYTES // (1024 * 1024), "row_limit": readers.ROW_LIMIT},
     }
+
+
+def _legacy() -> bool:
+    from workspaces import context
+
+    return context.current().legacy
 
 
 def admin_enabled() -> bool:
@@ -421,9 +471,9 @@ _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
 
 
-def _tick(last_ghost: List[float]) -> None:
-    if ghost_settings() and time.time() - last_ghost[0] > 300:
-        last_ghost[0] = time.time()
+def _tick_one(last_ghost: Dict[str, float], wid: str) -> None:
+    if ghost_settings() and time.time() - last_ghost.get(wid, 0) > 300:
+        last_ghost[wid] = time.time()
         try:
             ghost_scan()
         except Exception:  # noqa: BLE001
@@ -435,12 +485,29 @@ def _tick(last_ghost: List[float]) -> None:
             pass
 
 
+def _tick(last_ghost: Dict[str, float]) -> None:
+    """Visit the default workspace and every active customer workspace, each acting only as itself."""
+    from workspaces import context, registry
+
+    targets = [context.legacy_workspace()] if context.mode() == "open" else []
+    try:
+        targets += registry.active_workspaces()
+    except Exception:  # noqa: BLE001
+        pass
+    for ws in targets:
+        try:
+            with context.use(ws):
+                _tick_one(last_ghost, ws.id)
+        except Exception:  # noqa: BLE001
+            continue
+
+
 def start_scheduler(interval: float = 30.0) -> None:
     global _thread
     if _thread and _thread.is_alive():
         return
     _stop.clear()
-    last_ghost = [0.0]
+    last_ghost: Dict[str, float] = {}
 
     def loop():
         while not _stop.wait(interval):
