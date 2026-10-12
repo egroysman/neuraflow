@@ -81,3 +81,54 @@ A small ML framework runs behind the scenes on the structured data (`backend/mlf
 ## Sample data dates
 
 The bundled sample was cut on 2026-04-09. So the forecast does not start in the past, the sample's invoices, bills, ledger and payroll dates are moved forward by whole calendar months until they end in the current month. Gaps inside each record stay exact, so payment behavior is unchanged. Only the bundled sample moves; uploads, `DEFAULT_*_CSV_PATH` files and databases never do. Set `SAMPLE_REBASE=off` to use the dates as cut.
+
+## Bring your own data (Data page)
+
+Open **Data** in the top nav. Until you connect something, the whole app runs on the built-in sample, and a "Sample data" pill in the nav says so. Each of the five datasets (invoices, vendor bills, ledger accounts, ledger journal lines, payroll roster) can come from its own source or all from the same one.
+
+**Sources.** CSV and Excel uploads (title rows above the headers are skipped, a sheet can be chosen), Snowflake and Databricks (pick a table or view, or write one read-only `SELECT`), and SFTP (a file name or a pattern such as `invoices*.csv`; the newest match is used).
+
+**Flow.** Choose the source, read the data, confirm the column matching (suggested from names and from what is in the columns; dates in US, day-first, `09-Apr-2026`, Excel serial and `20260409` forms and amounts like `$1,234.50` or `(500)` are understood), review the checks, load. Nothing loads while a check marked "Must fix" is open. Ledger accounts that have no NeuraFlow line are classified from their type and name, and each can be changed before loading.
+
+**Sample vs yours.** After the first dataset is connected, a dataset with no source is empty. It is never filled with sample data. The ledger is used only when both the chart of accounts and the journal are loaded.
+
+**Loaded data is a snapshot.** The forecast reads the last good snapshot, so a slow or down warehouse never blocks a page. A refresh that fails its checks, or comes back with less than half the previous rows, keeps the previous data and shows why on the Data page.
+
+### Server settings
+
+| Setting | What it does |
+|---|---|
+| `ADMIN_TOKEN` | Required to change anything on the Data page (sent as `X-Admin-Token`, kept in the browser tab only). Without it, changes are refused. There is no other sign-in in the app. Ten wrong tries in ten minutes are blocked for a while. |
+| `ALLOW_OPEN_DATA_ADMIN=1` | Local development only: allow changes with no token. |
+| `CONNECTION_ENCRYPTION_KEY` | Needed to save a connection from the page. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Passwords, tokens and keys are encrypted with it and never returned. If the key changes, saved credentials must be re-entered. |
+| `INGEST_DIR` | Where uploads, saved connections and loaded snapshots live. Default `backend/ingest_store` (gitignored). On Railway the disk is temporary, so mount a volume and point this at it, or it resets on each deploy. |
+| `MAX_UPLOAD_MB`, `INGEST_ROW_LIMIT` | Upload size (default 25) and rows read per dataset (default 250,000). |
+| `INGEST_SCHEDULER=off` | Turn the background refresher off. |
+
+Connections can also come from server settings instead of being saved: `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD` (or `SNOWFLAKE_PRIVATE_KEY`), `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, `SNOWFLAKE_ROLE`; `DATABRICKS_SERVER_HOSTNAME`, `DATABRICKS_HTTP_PATH`, `DATABRICKS_TOKEN`, `DATABRICKS_CATALOG`, `DATABRICKS_SCHEMA`; `SFTP_HOST`, `SFTP_PORT`, `SFTP_USERNAME`, `SFTP_PASSWORD` (or `SFTP_PRIVATE_KEY`), `SFTP_DIRECTORY`, `SFTP_HOST_KEY_SHA256`. These show on the Data page as "Server setting", are read-only there, and need no encryption key.
+
+### Refreshing on a schedule
+
+For connection sources, choose "Only when I ask", every N minutes (15 minimum) or once a day at a time in a time zone. A background thread in the server process runs the refreshes, so it only runs while the service is up and only once per running instance.
+
+### Auto-load from SFTP ("ghost" mode)
+
+With no clicking at all: set the `SFTP_*` settings above plus a pattern per dataset and a schedule.
+
+```
+SFTP_PATTERN_INVOICES=invoices*.csv
+SFTP_PATTERN_BILLS=bills*.csv
+SFTP_PATTERN_GL_ACCOUNTS=gl_accounts*.csv
+SFTP_PATTERN_GL_JOURNAL=gl_journal*.csv
+SFTP_PATTERN_PAYROLL=payroll*.csv
+SFTP_SCHEDULE=daily@06:00        # or: every 60m   (time zone: INGEST_TIMEZONE, default UTC)
+```
+
+A dataset loads itself only when every required column is matched, the checks pass and it has no source yet. Otherwise the Data page shows what to review and nothing is loaded. A dataset you connected by hand is never overridden.
+
+### Security notes
+
+- SFTP needs the server's host key fingerprint pinned (`SFTP_HOST_KEY_SHA256` or "Look up fingerprint" on the connection). Credentials are not sent to a server whose key does not match.
+- NeuraFlow only ever issues `SELECT`, with a row limit, and custom queries must be a single read-only statement. That filter is a safety net, not a security boundary: give the connection a read-only role that can see only the tables it needs.
+- There is one workspace. Whatever is loaded is what every viewer of the deployment sees; there are no per-user accounts or separate customers yet.
+- Uploaded files stay on the server's disk until replaced or disconnected.

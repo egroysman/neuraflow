@@ -13,6 +13,8 @@ from ar_context import get_ar_context
 from data_sources import get_data_source
 from traceability import create_trace_record, save_trace, get_recent_traces
 from cashflow.router import router as cashflow_router
+from ingest.router import router as ingest_router
+from ingest import service as ingest_service
 
 load_dotenv()
 
@@ -30,6 +32,14 @@ app.add_middleware(
 )
 
 app.include_router(cashflow_router)
+app.include_router(ingest_router)
+
+
+@app.on_event("startup")
+def _start_ingest_scheduler():
+    # Refreshes scheduled sources and loads SFTP drop-folder data. INGEST_SCHEDULER=off disables it.
+    if os.getenv("INGEST_SCHEDULER", "on").strip().lower() not in ("off", "0", "false", "no"):
+        ingest_service.start_scheduler()
 
 
 class ChatRequest(BaseModel):

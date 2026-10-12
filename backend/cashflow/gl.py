@@ -26,7 +26,12 @@ def _read(path: Path) -> List[Dict[str, Any]]:
 
 
 def load_gl() -> Optional[Dict[str, Any]]:
-    """Accounts and journal lines from the bundled sample (or env override paths)."""
+    """Accounts and journal lines from the Data page, else the bundled sample (or env override paths)."""
+    from ingest import service as ingest
+
+    acc_loaded, jr_loaded = ingest.rows_for("gl_accounts"), ingest.rows_for("gl_journal")
+    if acc_loaded is not None or jr_loaded is not None:
+        return {"accounts": acc_loaded, "journal": jr_loaded} if acc_loaded and jr_loaded else None
     acc_env, jr_env = os.getenv("DEFAULT_GL_ACCOUNTS_CSV_PATH"), os.getenv("DEFAULT_GL_JOURNAL_CSV_PATH")
     acc = Path(acc_env) if acc_env and Path(acc_env).exists() else HERE / "neuraflow_gl_accounts.csv"
     jr = Path(jr_env) if jr_env and Path(jr_env).exists() else HERE / "neuraflow_gl_journal.csv"
@@ -41,6 +46,11 @@ def load_gl() -> Optional[Dict[str, Any]]:
 
 
 def load_payroll_rows() -> List[Dict[str, Any]]:
+    from ingest import service as ingest
+
+    loaded = ingest.rows_for("payroll")
+    if loaded is not None:
+        return loaded
     env = os.getenv("DEFAULT_PAYROLL_CSV_PATH")
     path = Path(env) if env and Path(env).exists() else HERE / "neuraflow_payroll.csv"
     rows = _read(path)
