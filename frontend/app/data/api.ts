@@ -1,6 +1,6 @@
 import { API_BASE } from "../cashflow/lib";
 import { authFetch } from "../auth";
-import type { ActivityEvent, Analysis, Connection, ConnType, DataStatus, DatasetKey, LastRun, Schedule, Source, SourceObject } from "./types";
+import type { ActivityEvent, Analysis, SetupGuide, TestResult, Connection, ConnType, DataStatus, DatasetKey, LastRun, Schedule, Source, SourceObject } from "./types";
 
 const KEY = "nf_admin_token";
 
@@ -52,6 +52,7 @@ async function call<T>(method: string, path: string, body?: unknown, form?: Form
       if (typeof j?.detail === "string") msg = j.detail;
       else if (j?.detail?.message) {
         msg = j.detail.message;
+        if (j.detail.hint) msg = `${j.detail.hint.title}. ${j.detail.hint.fix}\n\n${j.detail.message}`;
         code = j.detail.code;
         data = j.detail;
       } else if (Array.isArray(j?.detail)) msg = j.detail.map((d: { msg?: string }) => d.msg).join("; ");
@@ -68,7 +69,7 @@ export const listConnections = () => call<{ connections: Connection[]; encryptio
 export const createConnection = (name: string, type: ConnType, params: Record<string, unknown>) => call<{ id: string }>("POST", "/connections", { name, type, params });
 export const updateConnection = (id: string, name: string, type: ConnType, params: Record<string, unknown>) => call<{ id: string }>("PUT", `/connections/${encodeURIComponent(id)}`, { name, type, params });
 export const deleteConnection = (id: string) => call<{ ok: boolean }>("DELETE", `/connections/${encodeURIComponent(id)}`);
-export const testConnection = (id: string) => call<{ ok: boolean; message: string; needs_host_key?: boolean; host_key_sha256?: string }>("POST", `/connections/${encodeURIComponent(id)}/test`);
+export const testConnection = (id: string) => call<TestResult>("POST", `/connections/${encodeURIComponent(id)}/test`);
 export const observeHostKey = (params: Record<string, unknown>) => call<{ host_key_sha256: string }>("POST", "/connections/host-key", { name: "x", type: "sftp", params });
 export function uploadFile(file: File) {
   const f = new FormData();
@@ -87,3 +88,4 @@ export const resetAll = () => call<{ ok: boolean }>("POST", "/reset");
 export const ghostScan = () => call<{ state: Record<string, { ok: boolean; message: string }> }>("POST", "/ghost/scan");
 export const setGhost = (connection_id: string | null, patterns: Record<string, string>, schedule: string) => call<{ ghost: unknown }>("PUT", "/ghost", { connection_id, patterns, schedule });
 export const getActivity = () => call<{ events: ActivityEvent[] }>("GET", "/activity");
+export const getSetupGuide = (type: ConnType, params: Record<string, unknown>) => call<SetupGuide>("POST", "/setup-guide", { type, params });

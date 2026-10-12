@@ -110,7 +110,19 @@ def test_connection(cid: str) -> Dict[str, Any]:
             raise
     else:
         rd.test()
+        return _db_summary(rd)
     return {"ok": True, "message": "Connected."}
+
+
+def _db_summary(rd) -> Dict[str, Any]:
+    """After a warehouse connects, say what it can actually see. Connecting with no visible tables is
+    the most common first-time mistake (missing grants), so it is called out rather than reported as success."""
+    objs = rd.objects()
+    n = len(objs)
+    if n == 0:
+        return {"ok": True, "tables": 0, "message": "Connected, but this account can't see any tables or views.",
+                "warning": "Check that the role or token has USAGE on the database or catalog and schema, and SELECT on the tables. The setup guide has the exact grants."}
+    return {"ok": True, "tables": n, "message": f"Connected. It can see {n} table{'s' if n != 1 else ''} and view{'s' if n != 1 else ''}."}
 
 
 def observe_host_key(params: Dict[str, Any]) -> str:

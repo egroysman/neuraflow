@@ -58,3 +58,7 @@ export type Analysis = {
 };
 
 export type ActivityEvent = { at: number; actor: string; action: string; detail: string };
+export type SetupStep = { title: string; text: string; sql?: string; optional?: boolean };
+export type SetupGuide = { type: ConnType; steps: SetupStep[]; fill: Record<string, string>; then: string; egress_ips: string[] };
+export type Hint = { code: string; title: string; fix: string };
+export type TestResult = { ok: boolean; message: string; warning?: string; tables?: number; needs_host_key?: boolean; host_key_sha256?: string };

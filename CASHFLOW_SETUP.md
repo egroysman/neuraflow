@@ -166,3 +166,13 @@ Each customer gets a private workspace: its own data, saved connections, uploads
 4. Set `WORKSPACE_MODE=required`.
 
 Notes: the original `/chat`, `/chat-upload`, `/traceability` endpoints and the `/classic` page use one global data source, so they are switched off in required mode. The in-app scheduler runs once per backend instance; run a single instance, or refreshes will repeat.
+
+## Guided warehouse setup (Snowflake and Databricks)
+
+On the Data page, **Add connection** now has a **Setup guide** for Snowflake and Databricks. The customer's administrator answers a few questions (database or catalog, schemas, role names) and gets copy-paste steps: a read-only role, a small auto-suspending warehouse (Snowflake), a service user or service principal, and the exact `USAGE` / `SELECT` grants. Every grant is read-only. NeuraFlow never runs these steps itself; they are templates for the customer's administrator to review. Names are validated so they can't carry SQL.
+
+- **Plain-language errors.** Common warehouse failures (wrong password or role, no warehouse, missing grants, blocked IP, bad HTTP path, warehouse starting) are explained with what to change. The database's own message is always shown too.
+- **Connection check.** After connecting, NeuraFlow says how many tables and views the account can see, and warns when it connects but sees none (usually missing grants).
+- **`NEURAFLOW_EGRESS_IPS`** (optional): comma-separated outbound IPs NeuraFlow connects from. When set, the guide includes the exact network-policy / IP-access-list statement. Leave it unset if your host has no fixed outbound address; the guide then tells the customer to ask you for one.
+
+The scripts have been tested for safety and shape, but not run against a real Snowflake or Databricks account yet. Run them with the first pilot customer before relying on them.

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from . import readers, service, store
+from . import diagnose, guide, readers, service, store
 from .readers import SourceError
 from .schemas import DATASETS
 from workspaces import audit
@@ -49,6 +49,9 @@ async def require_admin(request: Request, x_admin_token: Optional[str] = Header(
 
 def _err(e: SourceError) -> HTTPException:
     msg = str(e)
+    hint = diagnose.diagnose(msg) if msg.startswith("The database said:") else None
+    if hint:
+        return HTTPException(400, {"code": hint["code"], "message": msg, "hint": hint})
     if msg.startswith("ENCRYPTION_KEY_MISSING:"):
         return HTTPException(400, {"code": "ENCRYPTION_KEY_MISSING", "message": msg.split(":", 1)[1].strip()})
     if msg.startswith("HOSTKEY:"):
@@ -138,6 +141,18 @@ def host_key(b: ConnBody):
     if b.type != "sftp":
         raise HTTPException(400, "Host keys apply to SFTP only.")
     return {"host_key_sha256": _run(service.observe_host_key, b.params)}
+
+
+class GuideBody(BaseModel):
+    type: str
+    params: Dict[str, Any] = {}
+
+
+@router.post("/setup-guide", dependencies=[Depends(require_admin)])
+def setup_guide(b: GuideBody):
+    out = _run(guide.build, b.type, b.params)
+    out["egress_ips"] = guide.egress_ips()
+    return out
 
 
 @router.post("/upload", dependencies=[Depends(require_admin)])
