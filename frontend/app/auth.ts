@@ -41,7 +41,7 @@ export async function authFetch(input: string, init: RequestInit = {}): Promise<
   return res;
 }
 
-export async function fetchMode(): Promise<{ mode: "open" | "required"; platform_admin: boolean }> {
+export async function fetchMode(): Promise<{ mode: "open" | "required"; login_required?: boolean; platform_admin: boolean }> {
   const res = await fetch(`${API_BASE}/auth/mode`);
   if (!res.ok) throw new Error("Could not reach the server.");
   return res.json();

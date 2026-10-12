@@ -27,9 +27,12 @@ async def require_admin(request: Request, x_admin_token: Optional[str] = Header(
     mode applies, and it keeps using ADMIN_TOKEN."""
     from workspaces import deps
 
-    if x_workspace_key or (authorization and authorization.lower().startswith("bearer ")):
+    key = (x_workspace_key or (authorization[7:] if authorization and authorization.lower().startswith("bearer ") else "")).strip()
+    if key and not (mode() == "open" and deps.is_site_password(key)):
         await deps.require_admin_ws(request, authorization, x_workspace_key)
         return
+    if deps.site_password():  # the shared password only opens the app; data changes still need ADMIN_TOKEN as well
+        await deps.resolve(request, authorization, x_workspace_key)
     if mode() == "required":
         raise HTTPException(401, "Sign in with your workspace key.")
     token = os.getenv("ADMIN_TOKEN", "")

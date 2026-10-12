@@ -40,16 +40,35 @@ def _token(request: Request, authorization: Optional[str], x_workspace_key: Opti
     return ""
 
 
+def site_password() -> str:
+    """APP_PASSWORD puts a single shared password in front of the original (open-mode) workspace."""
+    return os.getenv("APP_PASSWORD", "").strip()
+
+
+def login_required() -> bool:
+    return mode() == "required" or bool(site_password())
+
+
+def is_site_password(token: str) -> bool:
+    pw = site_password()
+    return bool(pw and token and hmac.compare_digest(token.encode(), pw.encode()))
+
+
 async def resolve(request: Request, authorization: Optional[str] = Header(None), x_workspace_key: Optional[str] = Header(None)) -> Workspace:
     """Identify the workspace for this request and make it the current one."""
     token = _token(request, authorization, x_workspace_key)
     if not token:
-        if mode() == "open":
+        if mode() == "open" and not site_password():
             ws = legacy_workspace()
             set_current(ws)
             return ws
-        raise HTTPException(401, "Sign in with your workspace key.")
+        raise HTTPException(401, "Log in to continue.")
     _throttle(request)
+    if mode() == "open" and is_site_password(token):
+        ws = legacy_workspace("viewer")  # the password lets people look; changing data still needs ADMIN_TOKEN
+        set_current(ws)
+        request.state.workspace = ws
+        return ws
     res = registry.authenticate(token)
     if not res.ok:
         _fail(request)
@@ -86,7 +105,13 @@ async def require_platform(request: Request, x_platform_token: Optional[str] = H
         raise HTTPException(401, "Platform token required.")
 
 
-async def legacy_only() -> None:
-    """For the original single-workspace endpoints, which read global data. Off once workspaces are required."""
+async def legacy_only(request: Request, authorization: Optional[str] = Header(None), x_workspace_key: Optional[str] = Header(None)) -> None:
+    """For the original single-workspace endpoints, which read global data. Off once workspaces are required,
+    and behind the password when APP_PASSWORD is set."""
     if mode() == "required":
         raise HTTPException(404, "This endpoint is not available when workspaces are required.")
+    if site_password():
+        _throttle(request)
+        if not is_site_password(_token(request, authorization, x_workspace_key)):
+            _fail(request)
+            raise HTTPException(401, "Log in to continue.")

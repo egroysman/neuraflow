@@ -30,10 +30,10 @@ export default function SignIn() {
   return (
     <main className="mx-auto w-full max-w-md px-4 py-16 text-[#e5e7eb]">
       <h1 className="m-0 text-2xl font-semibold">Sign in to your workspace</h1>
-      <p className="mt-2 text-sm text-[#9ca3af]">Paste the access key you were sent, or open the private link you received. Each workspace holds one company&apos;s data and nobody else can see it.</p>
+      <p className="mt-2 text-sm text-[#9ca3af]">Enter the password or access key you were given, or open the private link you received. Each workspace holds one company&apos;s data and nobody else can see it.</p>
       <form className="mt-6 space-y-3" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-        <label className="block text-sm font-medium" htmlFor="key">Access key</label>
-        <input id="key" type="password" autoComplete="off" spellCheck={false} placeholder="nfk.…" className={inputClass} value={value} onChange={(e) => setValue(e.target.value)} />
+        <label className="block text-sm font-medium" htmlFor="key">Password or access key</label>
+        <input id="key" type="password" autoComplete="off" spellCheck={false} placeholder="Password or nfk.…" className={inputClass} value={value} onChange={(e) => setValue(e.target.value)} />
         <label className="flex items-center gap-2 text-sm text-[#d1d5db]">
           <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
           Keep me signed in on this device

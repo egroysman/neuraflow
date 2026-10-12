@@ -57,8 +57,8 @@ export default function TabNav() {
               {session.name} · {session.role === "admin" ? "Admin" : "Viewer"}
             </span>
           )}
-          {ready && session && !session.legacy && (
-            <button type="button" onClick={signOut} className="rounded-md border border-[#374151] px-2 py-1 text-xs text-[#d1d5db] hover:border-[#60a5fa]">Sign out</button>
+          {ready && session && (!session.legacy || required) && (
+            <button type="button" onClick={signOut} className="rounded-md border border-[#374151] px-2 py-1 text-xs text-[#d1d5db] hover:border-[#60a5fa]">Log out</button>
           )}
         </div>
       </div>

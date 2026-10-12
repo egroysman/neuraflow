@@ -87,7 +87,7 @@ def revoke(ws_id: str, key_id: str):
 @auth.get("/mode")
 def get_mode():
     """Public: tells the app whether it must ask for a key."""
-    return {"mode": context.mode(), "platform_admin": deps.platform_enabled()}
+    return {"mode": context.mode(), "login_required": deps.login_required(), "platform_admin": deps.platform_enabled()}
 
 
 @auth.get("/session")

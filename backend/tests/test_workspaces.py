@@ -369,3 +369,54 @@ def test_activity_log_records_changes_without_secrets(client):
     assert any(e["action"] == "connection saved" for e in ev)
     assert "TOPSECRET" not in json.dumps(ev)
     assert (registry.workspaces_dir() / ws / "audit.jsonl").exists()
+
+
+# ------------------------------------------------------------------ APP_PASSWORD (open mode behind one shared password)
+
+def test_site_password_closes_every_route_until_it_is_given(client, monkeypatch):
+    from main import app
+
+    monkeypatch.setenv("WORKSPACE_MODE", "open")
+    monkeypatch.setenv("APP_PASSWORD", "let-me-in")
+    assert client.get("/auth/mode").json()["login_required"] is True
+    checked = 0
+    for path, ops in app.openapi()["paths"].items():
+        for m in ops:
+            if (m.upper(), path) in PUBLIC or path.startswith("/public/") or path.startswith("/platform"):
+                continue
+            url = path.replace("{dataset}", "invoices").replace("{cid}", "c_1").replace("{ws_id}", "ws_aaaaaaaaaa").replace("{key_id}", "k_1").replace("{lead_id}", "l_1")
+            r = client.request(m.upper(), url, json={}) if m in ("post", "put", "patch") else client.request(m.upper(), url)
+            assert r.status_code in (401, 403, 404, 503), f"{m} {path} answered {r.status_code} without the password"
+            checked += 1
+    assert checked > 30
+
+
+def test_site_password_lets_people_look_but_not_change_data(client, monkeypatch):
+    monkeypatch.setenv("WORKSPACE_MODE", "open")
+    monkeypatch.setenv("APP_PASSWORD", "let-me-in")
+    assert client.get("/cashflow/defaults", headers=H("wrong")).status_code == 401
+    assert client.get("/cashflow/defaults", headers=H("let-me-in")).status_code == 200
+    s = client.get("/auth/session", headers=H("let-me-in")).json()["workspace"]
+    assert s["legacy"] and s["role"] == "viewer"
+    # no admin token configured and none given: changing data is still refused even with the password
+    assert client.post("/data/reset", headers=H("let-me-in")).status_code in (401, 403)
+    monkeypatch.setenv("ADMIN_TOKEN", "t")
+    assert client.post("/data/reset", headers={"X-Admin-Token": "t"}).status_code == 401  # admin token alone, no password
+    assert client.post("/data/reset", headers={**H("let-me-in"), "X-Admin-Token": "t"}).status_code == 200
+
+
+def test_site_password_also_guards_the_original_chat_endpoints_and_throttles_guessing(client, monkeypatch):
+    monkeypatch.setenv("WORKSPACE_MODE", "open")
+    monkeypatch.setenv("APP_PASSWORD", "let-me-in")
+    assert client.get("/traceability").status_code == 401
+    assert client.get("/traceability", headers=H("let-me-in")).status_code != 401
+    for _ in range(20):
+        client.get("/auth/session", headers=H("guess"))
+    assert client.get("/auth/session", headers=H("let-me-in")).status_code == 429
+
+
+def test_without_a_password_open_mode_is_unchanged(client, monkeypatch):
+    monkeypatch.setenv("WORKSPACE_MODE", "open")
+    monkeypatch.delenv("APP_PASSWORD", raising=False)
+    assert client.get("/auth/mode").json()["login_required"] is False
+    assert client.get("/cashflow/defaults").status_code == 200

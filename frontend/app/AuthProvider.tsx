@@ -55,7 +55,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     (async () => {
       let req = false;
       try {
-        req = (await fetchMode()).mode === "required";
+        const m = await fetchMode();
+        req = m.login_required ?? m.mode === "required";
       } catch {
         /* server unreachable: pages show their own errors */
       }
