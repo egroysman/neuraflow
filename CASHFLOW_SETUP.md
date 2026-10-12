@@ -176,3 +176,12 @@ On the Data page, **Add connection** now has a **Setup guide** for Snowflake and
 - **`NEURAFLOW_EGRESS_IPS`** (optional): comma-separated outbound IPs NeuraFlow connects from. When set, the guide includes the exact network-policy / IP-access-list statement. Leave it unset if your host has no fixed outbound address; the guide then tells the customer to ask you for one.
 
 The scripts have been tested for safety and shape, but not run against a real Snowflake or Databricks account yet. Run them with the first pilot customer before relying on them.
+
+## Public site (`/welcome`)
+
+`/welcome` is a public page for visitors: what NeuraFlow does, how it works, an honest "where it is today" section, a question assistant, and a demo request form. In required workspace mode, visitors who open `/` land here; signed-in people go straight to the app. In the original single-workspace mode, `/` still opens the app.
+
+- **Question assistant.** Answers only from `backend/public/knowledge.md`, a written product description. **Edit that file to change what it can say**, and keep it accurate: it must not claim features, prices, customers or certifications you don't have. It sees no customer data and has no tools. It uses `OPENAI_API_KEY`, so questions go to OpenAI, which the page says. Limits: 15 questions per visitor per hour and `PUBLIC_ASK_DAILY_LIMIT` (default 300) per day in total.
+- **Demo requests.** Stored on the server (in `WORKSPACES_DIR`, so it needs the same persistent volume) and listed on `/platform` under Demo requests, where you can mark them handled or delete them. There is no email sending: check `/platform`. Limits: 5 per visitor per hour, plus a hidden spam trap field. The form tells people their details are used only to reply.
+- **Live demo (optional).** Create a workspace that starts with **Demo** data, issue it a **viewer** key, and set that key as `PUBLIC_DEMO_KEY`. A "Try the live demo" button then appears and signs visitors in read-only on the sample data. An admin key, or a key for a workspace with real data, is refused. Revoke the key to turn the demo off.
+- Don't point `PUBLIC_DEMO_KEY` at anything you wouldn't want the whole internet to read.

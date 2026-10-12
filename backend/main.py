@@ -15,6 +15,7 @@ from traceability import create_trace_record, save_trace, get_recent_traces
 from cashflow.router import router as cashflow_router
 from ingest.router import router as ingest_router
 from ingest import service as ingest_service
+from public.router import router as public_router
 from workspaces import registry as ws_registry
 from workspaces.deps import legacy_only
 from workspaces.router import auth as ws_auth, platform as ws_platform
@@ -37,6 +38,7 @@ app.add_middleware(
 app.include_router(cashflow_router)
 app.include_router(ingest_router)
 app.include_router(ws_platform)
+app.include_router(public_router)
 app.include_router(ws_auth)
 
 

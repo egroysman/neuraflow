@@ -12,7 +12,7 @@ type Ctx = { ready: boolean; required: boolean; session: Session | null; status:
 const AuthCtx = createContext<Ctx>({ ready: false, required: false, session: null, status: null, signOut: () => {} });
 export const useAuth = () => useContext(AuthCtx);
 
-const OPEN_PATHS = ["/signin", "/platform"];
+const OPEN_PATHS = ["/welcome", "/signin", "/platform"];
 
 function EmptyState({ admin, name }: { admin: boolean; name?: string }) {
   return (
@@ -98,8 +98,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
   const open = OPEN_PATHS.some((p) => path.startsWith(p));
   useEffect(() => {
-    if (ready && required && !session && !open) router.replace("/signin");
-  }, [ready, required, session, open, router]);
+    if (ready && required && !session && !open) router.replace(path === "/" ? "/welcome" : "/signin");
+  }, [ready, required, session, open, path, router]);
 
   useEffect(() => {
     if (ready && session && path.startsWith("/signin")) router.replace("/cashflow");
