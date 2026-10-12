@@ -13,6 +13,7 @@ const TABS = [
 export default function TabNav() {
   const pathname = usePathname();
   const { ready, required, session, status, signOut } = useAuth();
+  if (pathname.startsWith("/welcome")) return null; // the public site has its own header
   const signedIn = !!session;
   const tabs = TABS.filter((t) => t.href !== "/data" || !session || session.legacy || session.role === "admin");
   // Says plainly whether numbers are the demo data, the customer's own, or not there yet.

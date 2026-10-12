@@ -93,3 +93,61 @@ def get_mode():
 @auth.get("/session")
 async def session(ws: context.Workspace = Depends(deps.require_viewer)):
     return {"workspace": {"id": ws.id, "name": ws.name, "role": ws.role, "legacy": ws.legacy, "starts_with": ws.starts_with}}
+
+
+# ------------------------------------------------------------------ demo requests from the public site
+
+def _leads():
+    import json
+
+    p = context.workspaces_dir() / "leads.json"
+    try:
+        return json.loads(p.read_text()) if p.exists() else []
+    except (OSError, ValueError):
+        return []
+
+
+def _save_leads(leads) -> None:
+    import json
+    import os
+
+    p = context.workspaces_dir() / "leads.json"
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(leads, indent=1))
+    os.replace(tmp, p)
+
+
+class LeadPatch(BaseModel):
+    handled: bool
+
+
+@platform.get("/leads")
+def list_leads():
+    return {"leads": list(reversed(_leads()))}
+
+
+@platform.patch("/leads/{lead_id}")
+def patch_lead(lead_id: str, b: LeadPatch):
+    from public.router import _LOCK
+
+    with _LOCK:
+        leads = _leads()
+        for l in leads:
+            if l["id"] == lead_id:
+                l["handled"] = b.handled
+                _save_leads(leads)
+                return {"ok": True}
+    raise HTTPException(404, "Unknown request.")
+
+
+@platform.delete("/leads/{lead_id}")
+def delete_lead(lead_id: str):
+    from public.router import _LOCK
+
+    with _LOCK:
+        leads = _leads()
+        kept = [l for l in leads if l["id"] != lead_id]
+        if len(kept) == len(leads):
+            raise HTTPException(404, "Unknown request.")
+        _save_leads(kept)
+    return {"ok": True}

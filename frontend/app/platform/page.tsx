@@ -7,6 +7,7 @@ import { Badge, Card, GhostButton, inputClass } from "../cashflow/ui";
 const TKEY = "nf_platform_token";
 type Ws = { id: string; name: string; starts_with: "empty" | "sample"; status: "active" | "suspended"; created_at: number; keys: number; last_active: number | null; datasets: number };
 type KeyRow = { id: string; role: "admin" | "viewer"; label: string; created_at: number; last_used_at: number | null; revoked: boolean };
+type Lead = { id: string; at: number; name: string; email: string; company: string; message: string; handled: boolean };
 type Issued = { wsId: string; wsName: string; role: string; label: string; key: string };
 
 const when = (t?: number | null) => (t ? new Date(t * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "never");
@@ -82,11 +83,13 @@ export default function PlatformPage() {
   const [startsWith, setStartsWith] = useState<"empty" | "sample">("empty");
   const [open, setOpen] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [leads, setLeads] = useState<Lead[]>([]);
 
   const load = useCallback(async () => {
     try {
       const r = await api<{ workspaces: Ws[] }>("GET", "/workspaces");
       setList(r.workspaces);
+      api<{ leads: Lead[] }>("GET", "/leads").then((l) => setLeads(l.leads)).catch(() => {});
       setAuthed(true);
     } catch (e) {
       const st = (e as { status?: number }).status;
@@ -119,6 +122,14 @@ export default function PlatformPage() {
     if (typed !== w.name) return;
     setError(null);
     try { await api("DELETE", `/workspaces/${w.id}`); setOpen(null); await load(); } catch (e) { setError((e as Error).message); }
+  }
+
+  async function markLead(l: Lead, handled: boolean) {
+    try { await api("PATCH", `/leads/${l.id}`, { handled }); await load(); } catch (e) { setError((e as Error).message); }
+  }
+  async function dropLead(l: Lead) {
+    if (!window.confirm(`Delete the request from ${l.name}?`)) return;
+    try { await api("DELETE", `/leads/${l.id}`); await load(); } catch (e) { setError((e as Error).message); }
   }
 
   const link = issued && typeof window !== "undefined" ? `${window.location.origin}/signin#key=${issued.key}` : "";
@@ -172,6 +183,27 @@ export default function PlatformPage() {
               </label>
               <button type="submit" disabled={!name.trim()} className="rounded-lg bg-[#2563eb] px-3 py-2 text-sm font-medium text-white hover:bg-[#1d4ed8] disabled:opacity-50">Create workspace</button>
             </form>
+          </Card>
+
+          <Card title={`Demo requests${leads.length ? ` (${leads.filter((l) => !l.handled).length} new)` : ""}`}>
+            {leads.length === 0 && <p className="m-0 text-sm text-[#9ca3af]">None yet. Requests from the public site appear here.</p>}
+            <ul className="m-0 list-none space-y-3 p-0" data-testid="leads">
+              {leads.map((l) => (
+                <li key={l.id} className="rounded-xl border border-[#1f2937] p-3 text-sm" data-testid={`lead-${l.id}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="m-0 font-semibold">{l.name}{l.company ? `, ${l.company}` : ""} {l.handled && <Badge tone="good">Handled</Badge>}</p>
+                      <p className="m-0 text-xs text-[#9ca3af]"><a href={`mailto:${l.email}`} className="text-[#60a5fa]">{l.email}</a> · {when(l.at)}</p>
+                      {l.message && <p className="m-0 mt-1 whitespace-pre-line break-words text-[#d1d5db]">{l.message}</p>}
+                    </div>
+                    <div className="flex gap-2">
+                      <GhostButton onClick={() => markLead(l, !l.handled)}>{l.handled ? "Mark new" : "Mark handled"}</GhostButton>
+                      <GhostButton danger onClick={() => dropLead(l)}>Delete</GhostButton>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </Card>
 
           <Card title={`Workspaces${list ? ` (${list.length})` : ""}`}>

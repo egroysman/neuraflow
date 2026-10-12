@@ -1,0 +1,45 @@
+/* Ledger-paper palette: the page reads like a bookkeeper's sheet. Blue ink is on time, red pen is late. */
+.site {
+  --paper: #f0f4ef;
+  --paper-deep: #e4ebe3;
+  --ink: #15213a;
+  --muted: #566176;
+  --rule: #c5d1c6;
+  --blue: #1d53b3;
+  --blue-deep: #163f8a;
+  --red: #c4352b;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body, Georgia, "Times New Roman", serif);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  font-variant-numeric: tabular-nums;
+}
+.site h1, .site h2, .site h3, .site .sans {
+  font-family: var(--font-head, system-ui, sans-serif);
+  letter-spacing: -0.02em;
+}
+.site a { color: var(--blue); text-underline-offset: 3px; }
+.site a:hover { color: var(--blue-deep); }
+.site :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 2px; }
+.site .btn {
+  display: inline-block; border: 0; cursor: pointer; text-decoration: none;
+  background: var(--ink); color: var(--paper); padding: 0.7rem 1.15rem; border-radius: 3px;
+  font-family: var(--font-head, system-ui, sans-serif); font-weight: 700; font-size: 0.95rem; letter-spacing: 0;
+}
+.site .btn:hover { background: #24345a; color: var(--paper); }
+.site .btn[disabled] { opacity: 0.55; cursor: default; }
+.site .btn-quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+.site .btn-quiet:hover { background: var(--paper-deep); color: var(--ink); }
+.site input, .site textarea {
+  width: 100%; font: inherit; color: var(--ink); background: #fbfcfa; border: 1.5px solid var(--rule);
+  border-radius: 3px; padding: 0.6rem 0.75rem;
+}
+.site input:focus-visible, .site textarea:focus-visible { border-color: var(--blue); outline-offset: 0; }
+.site label { font-family: var(--font-head, system-ui, sans-serif); font-weight: 500; font-size: 0.9rem; }
+
+/* The one moving thing on the page: invoice dots settle onto their payment days once. */
+@keyframes settle { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.site .dot { animation: settle 0.5s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .site .dot { animation: none; } }

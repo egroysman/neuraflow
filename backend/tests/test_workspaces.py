@@ -136,7 +136,7 @@ def test_deleting_a_workspace_removes_its_files_and_keys(client):
 
 # ------------------------------------------------------------------ fail closed
 
-PUBLIC = {("GET", "/"), ("GET", "/auth/mode"), ("GET", "/docs"), ("GET", "/redoc"), ("GET", "/openapi.json"), ("GET", "/docs/oauth2-redirect"), ("HEAD", "/docs"), ("HEAD", "/redoc"), ("HEAD", "/openapi.json"), ("HEAD", "/docs/oauth2-redirect")}
+PUBLIC = {("GET", "/public/config"), ("POST", "/public/ask"), ("POST", "/public/demo-request"), ("GET", "/public/demo-access"), ("GET", "/"), ("GET", "/auth/mode"), ("GET", "/docs"), ("GET", "/redoc"), ("GET", "/openapi.json"), ("GET", "/docs/oauth2-redirect"), ("HEAD", "/docs"), ("HEAD", "/redoc"), ("HEAD", "/openapi.json"), ("HEAD", "/docs/oauth2-redirect")}
 
 
 def test_every_route_refuses_anonymous_requests_in_required_mode(client):
@@ -148,7 +148,9 @@ def test_every_route_refuses_anonymous_requests_in_required_mode(client):
         for m in ops:
             if (m.upper(), path) in PUBLIC:
                 continue
-            url = path.replace("{dataset}", "invoices").replace("{cid}", "c_1").replace("{ws_id}", "ws_aaaaaaaaaa").replace("{key_id}", "k_1")
+            if path.startswith("/public/"):
+                continue  # the public site's own API; covered in test_public_site.py
+            url = path.replace("{dataset}", "invoices").replace("{cid}", "c_1").replace("{ws_id}", "ws_aaaaaaaaaa").replace("{key_id}", "k_1").replace("{lead_id}", "l_1")
             r = client.request(m.upper(), url, json={}) if m in ("post", "put", "patch") else client.request(m.upper(), url)
             assert r.status_code in (401, 403, 404, 503), f"{m} {path} answered {r.status_code} without a key"
             checked += 1
