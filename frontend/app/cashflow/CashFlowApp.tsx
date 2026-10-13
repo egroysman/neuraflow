@@ -478,7 +478,12 @@ export default function CashFlowApp() {
                           body={{ assumptions, scenario, adjustments }}
                           focus={t.id === "receivables" ? focus.receivables : t.id === "credit" ? focus.credit : t.id === "payables" ? focus.payables : null}
                           onClearFocus={() => setFocus((f) => ({ ...f, ...(t.id === "receivables" ? { receivables: null } : t.id === "credit" ? { credit: null } : { payables: null }) }))}
-                          onApply={(changes) => setAdjustments((a) => ({ ...a, ...changes }))}
+                          onApply={(changes, nextScenario) => {
+                            setAdjustments((a) => ({ ...a, ...changes }));
+                            if (nextScenario) setScenario(nextScenario);
+                          }}
+                          onRestore={t.id === "forecast" ? (snap) => { setAdjustments(snap.adjustments); setScenario(snap.scenario); } : undefined}
+                          onOpenTab={t.id === "forecast" ? (id) => { setTab(id); setVisited((v) => (v.includes(id) ? v : [...v, id])); } : undefined}
                         />
                       </div>
                     ))}
