@@ -169,8 +169,10 @@ def test_suggestions_limited_to_the_tabs_own_levers(tab):
     if tab == "credit":
         assert assistant.suggestible(tab) == [] and assistant.validate_suggestions({"extra_hires": 1}, tab) == {}
         return
+    if tab == "forecast":  # the forecast assistant is the hub: every tab's levers
+        return
     own = assistant.suggestible(tab)[0]
-    other = next(n for t in ALL_TABS if t != tab for n in assistant.suggestible(t))
+    other = next(n for t in ALL_TABS if t not in (tab, "forecast") for n in assistant.suggestible(t))
     out = assistant.validate_suggestions({own: 0, other: 1}, tab)
     assert other not in out
     assert own in out
@@ -200,3 +202,51 @@ def test_legacy_endpoint_is_receivables(client, fake):
 def test_unknown_tab_rejected(client, fake):
     fake({"answer": "x"})
     assert client.post("/cashflow/assistant", json=payload(tab="nope")).status_code == 422
+
+
+# ---- the forecast assistant can change every tab ---------------------------
+
+def test_forecast_assistant_reaches_every_tabs_levers():
+    levers = set(assistant.suggestible("forecast"))
+    for tab in ALL_TABS:
+        if tab != "forecast":
+            assert set(assistant.suggestible(tab)) <= levers
+    assert levers == {n for g in Adjustments.GROUPS.values() for n in g}
+
+
+def test_forecast_changes_across_tabs_apply(client, fake):
+    calls = fake({"answer": "Done.", "changes": {"extra_hires": 3, "collection_delay_days": 15, "capex_delay_months": 3, "nonsense": 1, "dpo_change_days": 999},
+                  "scenario": "worst", "apply": True, "follow_ups": ["Undo that?"]})
+    r = client.post("/cashflow/assistant", json=payload("Add 3 hires, customers pay 15 days late, delay capex 3 months", tab="forecast", adj={"extra_hires": 1}))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["suggested_whatifs"] == {"extra_hires": 3, "collection_delay_days": 15, "capex_delay_months": 3}
+    assert body["lever_tabs"] == {"extra_hires": "payroll", "collection_delay_days": "receivables", "capex_delay_months": "capex"}
+    assert body["scenario"] == "worst" and body["apply"] is True
+    prompt = calls[-1]
+    assert '"Payroll"' in prompt and '"Receivables"' in prompt and "other_tabs" in prompt
+    assert '"extra_hires": {"value": 1' in prompt  # sees the current slider settings
+
+
+def test_forecast_apply_needs_real_changes(fake):
+    fake({"answer": "Nothing to change.", "changes": {"bogus": 1}, "scenario": "sideways", "apply": True})
+    out = assistant.ask({}, "q", [], "forecast")
+    assert out["suggested_whatifs"] == {} and out["scenario"] is None and out["apply"] is False
+
+
+def test_forecast_proposal_is_not_applied(fake):
+    fake({"answer": "You could…", "changes": {"opex_change_pct": -5}, "apply": "yes"})
+    out = assistant.ask({}, "q", [], "forecast")
+    assert out["suggested_whatifs"] == {"opex_change_pct": -5} and out["apply"] is False
+
+
+def test_forecast_allows_up_to_twelve_changes(fake):
+    many = {n: 0 for n in assistant.suggestible("forecast")}
+    fake({"answer": "Reset.", "changes": many, "apply": True})
+    assert len(assistant.ask({}, "q", [], "forecast")["suggested_whatifs"]) == 12
+
+
+def test_other_tabs_keep_their_old_reply_shape(fake):
+    fake({"answer": "ok", "suggested_whatifs": {"extra_hires": 2}})
+    out = assistant.ask({}, "q", [], "payroll")
+    assert out["suggested_whatifs"] == {"extra_hires": 2} and "apply" not in out

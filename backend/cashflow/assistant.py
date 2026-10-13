@@ -44,9 +44,26 @@ TAB_ROLES = {
 SUGGESTIBLE = list(Adjustments.GROUPS["ar"])
 
 
+# The forecast tab's assistant is the hub: it may change the levers on every tab.
+HUB_TAB = "forecast"
+TAB_LABELS = {
+    "forecast": "Forecast", "receivables": "Receivables", "payroll": "Payroll", "payables": "Payables",
+    "capex": "Capex", "balance": "Balance Sheet", "gl": "General Ledger", "trends": "Trends",
+}
+# Which tab each lever lives on (its sliders are shown there).
+LEVER_TAB = {name: tab for tab, group in TAB_GROUPS.items() if group for name in Adjustments.GROUPS[group]}
+SCENARIOS = ("base", "best", "worst")
+
+
 def suggestible(tab: str) -> List[str]:
+    if tab == HUB_TAB:
+        return list(LEVER_TAB)
     group = TAB_GROUPS[tab]
     return list(Adjustments.GROUPS[group]) if group else []
+
+
+def max_suggestions(tab: str) -> int:
+    return 12 if tab == HUB_TAB else 3
 MODEL = os.getenv("AR_ASSISTANT_MODEL", "gpt-4.1-mini")
 MAX_HISTORY = 8
 
@@ -180,7 +197,55 @@ def _ctx_forecast(result, data):
         for name, c in result["comparison"].items()
     }
     ctx["macro_overlay"] = result["macro"] if result["macro"].get("applied") else None
+    ctx["other_tabs"] = _other_tabs(result)
+    ctx["impact_of_what_ifs_by_tab"] = {
+        TAB_LABELS[t]: result["whatif_impact"][g] for t, g in TAB_GROUPS.items() if g and g in result["whatif_impact"]
+    }
+    ctx["your_slider_settings"] = {
+        name: {"value": v, "tab": TAB_LABELS[LEVER_TAB[name]]}
+        for name, v in (data.get("sliders") or {}).items() if v and name in LEVER_TAB
+    }
+    ctx["scenario_preset"] = data.get("scenario")
     return ctx
+
+
+def _other_tabs(result: Dict[str, Any]) -> Dict[str, Any]:
+    """A short summary of each other tab, so the forecast assistant can reason across them."""
+    out: Dict[str, Any] = {}
+    ar_ = result.get("ar") or {}
+    if ar_:
+        out["Receivables"] = {
+            "open_total": _r(ar_.get("open_total")),
+            "expected_in_plan_window": _r(ar_.get("expected_in_horizon")),
+            "not_expected_to_be_collected": _r(ar_.get("expected_haircut")),
+            "top_customers": [
+                {"customer": c["customer_id"], "open": _r(c["open_amount"]), "avg_days_to_pay": c["avg_days_to_pay"], "risk": c["risk"]}
+                for c in ar_.get("customers", [])[:5]
+            ],
+        }
+    p = result.get("payroll") or {}
+    if p:
+        out["Payroll"] = {
+            "active_headcount": p.get("active_headcount"),
+            "annual_base_active": _r(p.get("annual_base_active")),
+            "total_cost_in_plan": _r(p.get("total_cost")),
+        }
+    ap_ = result.get("ap") or {}
+    if ap_:
+        out["Payables"] = {
+            "open_total": _r(ap_.get("open_total")),
+            "overdue_total": _r(ap_.get("overdue_total")),
+            "actual_days_to_pay": ap_.get("actual_dpo_days"),
+            "top_vendors": [{k: v for k, v in x.items() if k in ("vendor_id", "vendor_name", "open_amount")} for x in ap_.get("vendors", [])[:5]],
+        }
+    cx = result.get("capex") or {}
+    if cx.get("totals"):
+        out["Capex"] = {k: _r(v) for k, v in cx["totals"].items()}
+    bs = result.get("balance_sheet") or {}
+    if bs.get("months"):
+        last = bs["months"][-1]
+        out["Balance Sheet"] = {"at": last.get("label"), **{k: _r(last.get(k)) for k in ("cash", "receivables", "payables", "debt", "equity", "working_capital")}}
+    return out
 
 
 def _ctx_payroll(result, data):
@@ -347,6 +412,8 @@ def build_prompt(context: Dict[str, Any], message: str, history: List[Dict[str, 
         lo = next((m.ge for m in field.metadata if hasattr(m, "ge")), None)
         hi = next((m.le for m in field.metadata if hasattr(m, "le")), None)
         bounds[name] = {"min": lo, "max": hi, "meaning": field.description}
+    if tab == HUB_TAB:
+        return _hub_prompt(context, message, convo, bounds)
     suggest_text = (
         f"If a what-if would help the user see the effect of something, you may suggest slider settings, using ONLY these fields and ranges:\n{json.dumps(bounds)}\nNever suggest more than three settings. Omit \"suggested_whatifs\" when none would help."
         if bounds
@@ -371,6 +438,36 @@ Return ONLY valid JSON of this shape:
 {{"answer": "", "suggested_whatifs": {{}}, "follow_ups": ["", ""]}}"""
 
 
+def _hub_prompt(context: Dict[str, Any], message: str, convo: str, bounds: Dict[str, Any]) -> str:
+    by_tab: Dict[str, Dict[str, Any]] = {}
+    for name, b in bounds.items():
+        by_tab.setdefault(TAB_LABELS[LEVER_TAB[name]], {})[name] = b
+    return f"""You are the main assistant on the Forecast tab of a cash flow model; this tab covers {TAB_ROLES[HUB_TAB]}.
+You can see a summary of every other tab and you can change the what-if sliders on ANY tab (Forecast, Receivables, Payroll, Payables, Capex, Balance Sheet, General Ledger, Trends).
+Answer using ONLY the data below. Be concrete: name customers, vendors, dollar amounts and dates from the data. Do not invent names or numbers. If the data cannot answer, say what is missing.
+Write 1 to 3 short plain paragraphs. No markdown tables and no JSON inside the answer.
+
+Changing the model:
+- "changes" maps slider names to their NEW value. The value replaces the current setting (see your_slider_settings); use 0 to reset a slider. Use ONLY these sliders and ranges, grouped by the tab they live on:
+{json.dumps(by_tab)}
+- To switch the scenario preset set "scenario" to "base", "best" or "worst"; otherwise leave it null.
+- Set "apply" to true when the user asks you to make, set, change, add, remove, undo or reset something: the changes then take effect right away. Set it to false when you are only proposing changes for the user to approve.
+- In the answer, say plainly which tab each change is on and what it does to cash. At most 12 changes. Return "changes": {{}} when nothing should change.
+- Credit scores cannot be changed directly (they come from payment history); use the Receivables sliders to test slower payment instead.
+
+Data:
+{json.dumps(context, default=str)}
+
+Conversation so far:
+{convo}
+
+User request:
+{message}
+
+Return ONLY valid JSON of this shape:
+{{"answer": "", "changes": {{}}, "scenario": null, "apply": false, "follow_ups": ["", ""]}}"""
+
+
 def _default_complete(prompt: str) -> str:
     key = os.getenv("OPENAI_API_KEY")
     if not key:
@@ -388,6 +485,7 @@ complete: Callable[[str], str] = _default_complete
 def validate_suggestions(raw: Any, tab: str = "receivables") -> Dict[str, float]:
     """Keep only this tab's levers with in-range values."""
     allowed = suggestible(tab)
+    limit = max_suggestions(tab)
     out: Dict[str, float] = {}
     if not isinstance(raw, dict):
         return out
@@ -399,7 +497,7 @@ def validate_suggestions(raw: Any, tab: str = "receivables") -> Dict[str, float]
         except ValidationError:
             continue
         out[name] = value
-        if len(out) == 3:
+        if len(out) == limit:
             break
     return out
 
@@ -415,8 +513,16 @@ def ask(context: Dict[str, Any], message: str, history: List[Dict[str, Any]], ta
     if not isinstance(answer, str):
         answer = json.dumps(answer)
     follow = parsed.get("follow_ups") or []
-    return {
+    out = {
         "answer": answer.strip(),
         "suggested_whatifs": validate_suggestions(parsed.get("suggested_whatifs"), tab),
         "follow_ups": [str(f) for f in follow if isinstance(f, str) and f.strip()][:3],
     }
+    if tab == HUB_TAB:
+        if "changes" in parsed:
+            out["suggested_whatifs"] = validate_suggestions(parsed.get("changes"), tab)
+        scenario = parsed.get("scenario")
+        out["scenario"] = scenario if scenario in SCENARIOS else None
+        out["apply"] = parsed.get("apply") is True and bool(out["suggested_whatifs"] or out["scenario"])
+        out["lever_tabs"] = {name: LEVER_TAB[name] for name in out["suggested_whatifs"]}
+    return out

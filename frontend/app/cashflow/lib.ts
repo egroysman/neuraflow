@@ -177,6 +177,10 @@ export type AssistantReply = {
   answer: string;
   suggested_whatifs: Partial<Record<keyof Adjustments, number>>;
   follow_ups: string[];
+  // Forecast tab only: it can change levers on every tab and switch the scenario.
+  scenario?: Scenario | null;
+  apply?: boolean;
+  lever_tabs?: Partial<Record<keyof Adjustments, TabId>>;
 };
 
 export async function askAssistant(
@@ -205,6 +209,9 @@ export async function askAssistant(
     answer: String(data.answer ?? ""),
     suggested_whatifs: data.suggested_whatifs ?? {},
     follow_ups: Array.isArray(data.follow_ups) ? data.follow_ups.filter((x: unknown) => typeof x === "string") : [],
+    scenario: data.scenario === "base" || data.scenario === "best" || data.scenario === "worst" ? data.scenario : null,
+    apply: data.apply === true,
+    lever_tabs: data.lever_tabs && typeof data.lever_tabs === "object" ? data.lever_tabs : {},
   };
 }
 

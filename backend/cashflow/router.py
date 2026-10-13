@@ -209,7 +209,13 @@ def tab_assistant(req: AssistantRequest):
     invoices = ar.parse_invoices(rows)
     bills = ap.parse_bills(bill_rows)
     as_of = result["as_of"]
-    data: dict[str, Any] = {"invoices": invoices, "bills": bills, "focus": req.focus or req.customer_id}
+    data: dict[str, Any] = {
+        "invoices": invoices,
+        "bills": bills,
+        "focus": req.focus or req.customer_id,
+        "sliders": req.forecast.adjustments.model_dump(),
+        "scenario": req.forecast.scenario,
+    }
     if req.tab == "gl":
         data["gl"] = gl.overview(as_of, invoices, bills)
     if req.tab == "credit":
