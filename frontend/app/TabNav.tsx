@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
+import BrandMark from "./BrandMark";
 
 const TABS = [
   { href: "/cashflow", label: "Cash Flow" },
@@ -24,7 +25,10 @@ export default function TabNav() {
       className="sticky top-0 z-20 border-b border-[#1f2937] bg-[#0b0b0f]/95 backdrop-blur"
     >
       <div className="mx-auto flex max-w-[1600px] items-center gap-1 px-4 sm:px-6">
-        <span className="mr-4 py-3 text-sm font-bold tracking-wide text-white">NEURAFLOW</span>
+        <span className="mr-4 flex items-center gap-2 py-3 text-sm font-bold tracking-wide text-white">
+          <BrandMark size={22} />
+          NEURAFLOW
+        </span>
         {(signedIn || !required) && tabs.map((tab) => {
           const active = pathname.startsWith(tab.href);
           return (

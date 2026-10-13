@@ -1,0 +1,16 @@
+// The Capital Codex app icon: an open book with code lines and rising bars.
+export default function BrandMark({ size = 24, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" className={className}>
+      <rect width="64" height="64" rx="14" fill="#0E1A2B" />
+      <g transform="translate(7.2 7.2) scale(0.775)">
+        <path d="M6 15 L30 19.5 L30 53 L6 48.5 Z" fill="#F4F1EA" />
+        <path d="M34 19.5 L58 15 L58 48.5 L34 53 Z" fill="#F4F1EA" />
+        <path d="M11 26 L22 28 M14 32.5 L25 34.5 M11 39 L19 40.5" stroke="#0E1A2B" strokeWidth="2.4" strokeLinecap="round" fill="none" />
+        <rect x="38.5" y="37" width="4" height="10" rx="1" fill="#A9822E" />
+        <rect x="45" y="31" width="4" height="15" rx="1" fill="#A9822E" />
+        <rect x="51.5" y="23.5" width="4" height="21.5" rx="1" fill="#A9822E" />
+      </g>
+    </svg>
+  );
+}
