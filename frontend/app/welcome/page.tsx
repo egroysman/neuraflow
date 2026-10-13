@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { API_BASE } from "../cashflow/lib";
-import { useAuth } from "../AuthProvider";
 import BrandMark from "../BrandMark";
 import AskBox from "./AskBox";
 import DemoForm from "./DemoForm";
@@ -19,13 +17,15 @@ const STEPS = [
 ];
 
 export default function Welcome() {
-  const { session } = useAuth();
   const [cfg, setCfg] = useState<Config | null>(null);
   useEffect(() => {
     let alive = true;
     fetch(`${API_BASE}/public/config`).then((r) => (r.ok ? r.json() : null)).then((j) => alive && j && setCfg(j)).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Jump to the demo form and put the cursor in its first field.
+  const focusDemo = () => setTimeout(() => document.getElementById("d-name")?.focus({ preventScroll: true }), 350);
 
   return (
     <>
@@ -38,7 +38,7 @@ export default function Welcome() {
           <a href="#how">How it works</a>
           <a href="#today">Where it is today</a>
           <a href="#ask">Ask a question</a>
-          {session ? <Link href="/cashflow">Open your workspace</Link> : <Link href="/signin" className="btn">Log in</Link>}
+          <a href="#demo" onClick={focusDemo} className="btn">Request a demo</a>
         </nav>
       </header>
 
@@ -49,7 +49,7 @@ export default function Welcome() {
               <h1 className="m-0 text-[2.5rem] font-extrabold leading-[1.05] sm:text-5xl lg:text-[3.4rem]">Know who will pay you late before the invoice is due.</h1>
               <p className="mb-0 mt-5 max-w-[34rem] text-xl leading-relaxed">NeuraFlow scores each customer on how they actually pay, then builds your cash forecast from those habits. It runs on your own accounting data.</p>
               <div className="mt-7 flex flex-wrap items-center gap-3">
-                <a href="#demo" className="btn">Request a demo</a>
+                <a href="#demo" onClick={focusDemo} className="btn">Request a demo</a>
                 {cfg?.live_demo && <LiveDemo />}
               </div>
             </div>
@@ -110,24 +110,23 @@ export default function Welcome() {
           </div>
         </section>
 
+        <section id="demo" className="scroll-mt-4 border-t border-[var(--rule)] bg-[var(--paper-deep)]">
+          <div className="mx-auto max-w-[1080px] px-5 py-16 sm:px-8">
+            <h2 className="m-0 text-2xl font-bold">See it on your kind of data</h2>
+            <p className="mb-8 mt-2 max-w-[38rem]">Tell us where your invoices live and what you want to learn. We&apos;ll walk through it with you.</p>
+            <DemoForm />
+          </div>
+        </section>
         <section id="ask" className="mx-auto max-w-[1080px] scroll-mt-4 px-5 py-16 sm:px-8">
           <h2 className="m-0 text-2xl font-bold">Ask a question</h2>
           <p className="mb-6 mt-2 max-w-[38rem] text-[var(--muted)]">Try one of these, or type your own.</p>
           <AskBox questions={cfg?.suggested_questions ?? []} enabled={cfg ? cfg.assistant : true} />
         </section>
 
-        <section id="demo" className="scroll-mt-4 border-t border-[var(--rule)] bg-[var(--paper-deep)]">
-          <div className="mx-auto max-w-[1080px] px-5 py-16 sm:px-8">
-            <h2 className="m-0 text-2xl font-bold">See it on your kind of data</h2>
-            <p className="mb-8 mt-2 max-w-[38rem]">Tell us where your invoices live and what you want to learn. We&apos;ll walk through it with you.</p>
-            {cfg?.demo_requests === false ? <p role="status" className="m-0 max-w-xl text-lg">Demo requests aren&apos;t open yet. Please check back soon.</p> : <DemoForm />}
-          </div>
-        </section>
       </main>
 
       <footer className="mx-auto flex max-w-[1080px] flex-wrap justify-between gap-3 px-5 py-8 text-sm text-[var(--muted)] sm:px-8">
         <span>NeuraFlow is an early product.</span>
-        <Link href="/signin">Customer log in</Link>
       </footer>
     </>
   );

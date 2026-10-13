@@ -3,9 +3,20 @@
 import { useState } from "react";
 import { API_BASE } from "../cashflow/lib";
 
+// Where demo requests go when the server can't email them itself.
+const DEMO_INBOX = process.env.NEXT_PUBLIC_DEMO_EMAIL || "capitalcodexx@gmail.com";
+
+function mailtoFor(v: { name: string; email: string; company: string; message: string }) {
+  const subject = `Demo request from ${v.name}${v.company ? ` (${v.company})` : ""}`;
+  const lines = [`Name: ${v.name}`, `Email: ${v.email}`];
+  if (v.company) lines.push(`Company: ${v.company}`);
+  const body = [...lines, "", v.message || "I'd like a demo of NeuraFlow."].join("\n");
+  return `mailto:${DEMO_INBOX}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 export default function DemoForm() {
   const [v, setV] = useState({ name: "", email: "", company: "", message: "", website: "" });
-  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "mail">("idle");
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof v, val: string) => setV((p) => ({ ...p, [k]: val }));
 
@@ -15,14 +26,41 @@ export default function DemoForm() {
     try {
       const res = await fetch(`${API_BASE}/public/demo-request`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof j?.detail === "string" ? j.detail : "Check the form: a name and a valid email are needed.");
-      setState("done");
+      if (res.ok && j?.emailed === true) {
+        setState("done");
+        return;
+      }
+      // A problem with what the visitor typed: let them fix it.
+      if (res.status === 400 || res.status === 422 || res.status === 429) {
+        throw new Error(typeof j?.detail === "string" ? j.detail : "Check the form: a name and a valid email are needed.");
+      }
+      // The server took it but can't email it, or can't take it at all: send it by email instead so it is never lost.
+      sendByEmail();
     } catch (e) {
-      setError((e as Error).message === "Failed to fetch" ? "Couldn't reach the server. Check your connection and try again." : (e as Error).message);
+      if ((e as Error).message === "Failed to fetch") {
+        sendByEmail();
+        return;
+      }
+      setError((e as Error).message);
       setState("idle");
     }
   }
 
+  function sendByEmail() {
+    setState("mail");
+    window.location.href = mailtoFor(v);
+  }
+
+  if (state === "mail") {
+    return (
+      <div role="status" className="max-w-xl text-lg" data-testid="demo-mail">
+        <p className="m-0">Your email app should have opened with the request filled in. Press Send and we&apos;ll reply to {v.email}.</p>
+        <p className="mb-0 mt-3 text-base">
+          Nothing opened? <a href={mailtoFor(v)}>Email the request</a> or write to <a href={`mailto:${DEMO_INBOX}`}>{DEMO_INBOX}</a>.
+        </p>
+      </div>
+    );
+  }
   if (state === "done") {
     return (
       <p role="status" className="m-0 max-w-xl text-lg" data-testid="demo-done">
