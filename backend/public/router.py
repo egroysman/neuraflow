@@ -157,7 +157,8 @@ def demo_request(b: DemoRequest, request: Request, background: BackgroundTasks):
         os.replace(tmp, p)
     if notify.configured():
         background.add_task(_deliver, dict(lead))  # after the response, so the visitor never waits on email
-    return {"ok": True}
+    # Tells the site whether this request will reach the operator by email; if not, the site has the visitor email it.
+    return {"ok": True, "emailed": notify.configured()}
 
 
 def _deliver(lead: dict) -> None:

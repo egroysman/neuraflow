@@ -112,7 +112,8 @@ LEAD = {"name": "Pat Lee", "email": "pat@example.com", "company": "Acme", "messa
 
 
 def test_a_demo_request_is_stored_and_shown_only_to_the_platform_operator(client):
-    assert client.post("/public/demo-request", json=LEAD).json() == {"ok": True}
+    # No email set up here, so the site is told to have the visitor email it instead.
+    assert client.post("/public/demo-request", json=LEAD).json() == {"ok": True, "emailed": False}
     assert client.get("/platform/leads").status_code == 401
     leads = client.get("/platform/leads", headers=PLATFORM).json()["leads"]
     assert len(leads) == 1 and leads[0]["email"] == "pat@example.com" and leads[0]["handled"] is False
@@ -198,7 +199,7 @@ def enable(monkeypatch):
 
 def test_a_request_emails_the_operator_with_a_reply_to(client, mail, monkeypatch):
     enable(monkeypatch)
-    assert client.post("/public/demo-request", json=LEAD).json() == {"ok": True}
+    assert client.post("/public/demo-request", json=LEAD).json() == {"ok": True, "emailed": True}
     assert len(mail) == 1
     to, m = mail[0]
     assert to == "owner@example.com" and m["reply_to"] == "pat@example.com"
